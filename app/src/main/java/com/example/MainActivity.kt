@@ -198,14 +198,6 @@ fun CalculatorScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.ChatBubble,
-                            contentDescription = null,
-                            tint = animatedColor,
-                            modifier = Modifier
-                                .size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = phrase,
                             fontSize = 13.sp,
