@@ -1,0 +1,6 @@
+{
+  "name": "Calculadora de Pallets",
+  "description": "Calculadora en tiempo real para convertir jabas en pallets completos y jabas sobrantes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
