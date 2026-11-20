@@ -39,5 +39,16 @@ uint32_t GetThemeAccentColor(std::string_view name);
 bool GetThemeTouchButtonColor(uint32_t *color);
 // Color for the symbols drawn on touch buttons, 0x00BBGGRR. White if the theme doesn't set it.
 uint32_t GetThemeTouchIconColor();
+// Tryled: colors you can change per theme (Personalizar > Temas / Colores).
+enum class TryledColor {
+	Background, Accent, Tab, Selection, Title, Text, Cards, PlayButton, PlayText, Glow, COUNT
+};
+// The override for the current theme, or fallback if there is none. Colors are 0xAABBGGRR.
+uint32_t GetTryledColor(TryledColor c, uint32_t fallback);
+bool HasTryledColor(TryledColor c);
+// Set (or clear, with set=false) an override for the current theme and apply it.
+void SetTryledColor(TryledColor c, uint32_t color, bool set);
+void ResetTryledColors();
+
 // Copies the current theme's touch control style, opacity and background animation into g_Config.
 void ApplyThemeSettings();

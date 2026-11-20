@@ -203,6 +203,13 @@ Clickable::Clickable(LayoutParams *layoutParams)
 	bgColor_->Persist();
 }
 
+Bounds Clickable::ItemBackgroundBounds(const UIContext &dc) const {
+	const float gap = dc.GetTheme().itemGap;
+	if (gap <= 0.0f || bounds_.h <= gap * 4.0f)
+		return bounds_;
+	return Bounds(bounds_.x, bounds_.y + gap * 0.5f, bounds_.w, bounds_.h - gap);
+}
+
 void Clickable::DrawBG(UIContext &dc, const Style &style) {
 	if (style.background.type == DRAW_SOLID_COLOR) {
 		if (time_now_d() - bgColorLast_ >= 0.25f) {
@@ -212,9 +219,9 @@ void Clickable::DrawBG(UIContext &dc, const Style &style) {
 		}
 		bgColorLast_ = time_now_d();
 
-		dc.FillRect(Drawable(bgColor_->CurrentValue()), bounds_);
+		dc.FillRoundRect(Drawable(bgColor_->CurrentValue()), ItemBackgroundBounds(dc), dc.GetTheme().itemRadius);
 	} else {
-		dc.FillRect(style.background, bounds_);
+		dc.FillRoundRect(style.background, ItemBackgroundBounds(dc), dc.GetTheme().itemRadius);
 	}
 }
 

@@ -53,6 +53,7 @@
 #include "UI/GameBrowser.h"
 #include "UI/RetroScreen.h"
 #include "UI/TryledDraw.h"
+#include "UI/Theme.h"
 #include "Core/Config.h"
 #include "Core/Loaders.h"
 #include "Common/Data/Text/I18n.h"
@@ -330,8 +331,23 @@ static const GameInfoFlags kConsoleInfoFlags = GameInfoFlags::PARAM_SFO | GameIn
 
 namespace {
 
+// Animation speed from Personalizar > Animaciones: slow, normal, fast, none.
+float AnimSpeed() {
+	static const float speeds[] = { 0.6f, 1.0f, 2.0f, 1000.0f };
+	return speeds[std::clamp(g_Config.iTryledAnimSpeed, 0, 3)];
+}
+
+bool LiteMode() {
+	return g_Config.bTryledLite;
+}
+
+bool GlowOn() {
+	return g_Config.bTryledGlow && !g_Config.bTryledLite;
+}
+
+// t = elapsed / duration at normal speed.
 float EaseOut(float t) {
-	t = std::clamp(t, 0.0f, 1.0f);
+	t = std::clamp(t * AnimSpeed(), 0.0f, 1.0f);
 	return 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
 }
 
@@ -341,6 +357,11 @@ uint32_t ThemeAccent(const UIContext &dc) {
 
 uint32_t ThemeAccentText(const UIContext &dc) {
 	return dc.GetTheme().itemFocusedStyle.fgColor;
+}
+
+// Per-part colors from Personalizar > Colores, falling back to the theme.
+uint32_t PartColor(TryledColor part, uint32_t fallback) {
+	return GetTryledColor(part, fallback);
 }
 
 // Text that slides in from the left and fades in whenever the selected game changes.
@@ -357,38 +378,73 @@ public:
 		const float t = EaseOut(float(time_now_d() - std::max(s_consoleSelectTime, s_consoleOpenTime + 0.15) - delay_) / 0.4f);
 		Bounds b = bounds_;
 		b.x += (1.0f - t) * 36.0f;
-		const uint32_t color = colorAlpha(dc.GetTheme().infoStyle.fgColor & 0xFFFFFF, t * (small_ ? 0.8f : 1.0f));
+		const uint32_t base = scale_ > 1.0f ? PartColor(TryledColor::Title, dc.GetTheme().infoStyle.fgColor) : PartColor(TryledColor::Text, dc.GetTheme().infoStyle.fgColor);
+		const uint32_t color = colorAlpha(base & 0xFFFFFF, t * (small_ ? 0.8f : 1.0f));
+		std::string text = GetText();
+		if (scale_ > 1.0f && g_Config.bTryledUpperTitles) {
+			for (auto &c : text)
+				c = (char)toupper((unsigned char)c);
+		}
 		if (scale_ > 1.0f) {
 			dc.SetFontStyle(dc.GetTheme().uiFontBig);
 			dc.SetFontScale(scale_, scale_);
 		} else {
 			dc.SetFontStyle(small_ ? dc.GetTheme().uiFontSmall : dc.GetTheme().uiFont);
 		}
-		dc.DrawTextRectSqueeze(GetText(), b, color, ALIGN_LEFT | ALIGN_VCENTER);
+		dc.DrawTextRectSqueeze(text, b, color, ALIGN_LEFT | ALIGN_VCENTER);
 		dc.SetFontScale(1.0f, 1.0f);
 		dc.SetFontStyle(dc.GetTheme().uiFont);
 	}
+	void SetScale(float scale) { scale_ = scale; }
 private:
 	float scale_;
 	bool small_;
 	float delay_;
 };
 
-// Soft particles of light drifting upwards, in the theme accent color. Purely decorative.
+// Background effect behind the home (Personalizar > Animaciones): particles, stars, aurora, pixels or none.
 void DrawConsoleAmbient(UIContext &dc, double now) {
+	if (LiteMode())
+		return;
 	const Bounds &b = dc.GetBounds();
-	const uint32_t accent = ThemeAccent(dc) & 0xFFFFFF;
-	for (int i = 0; i < 22; i++) {
-		// Cheap deterministic pseudo-random values per particle.
-		const float r1 = fmodf(sinf(i * 12.9898f) * 43758.547f, 1.0f) * 0.5f + 0.5f;
-		const float r2 = fmodf(sinf(i * 78.233f) * 12543.31f, 1.0f) * 0.5f + 0.5f;
-		const float r3 = fmodf(sinf(i * 39.425f) * 24634.63f, 1.0f) * 0.5f + 0.5f;
-		const float speed = 0.012f + 0.02f * r2;
-		const float phase = fmodf(r1 + (float)now * speed, 1.0f);
-		const float x = b.x + b.w * (0.35f + 0.65f * r3) + sinf((float)now * 0.4f + i) * 18.0f;
-		const float y = b.y2() - phase * (b.h + 40.0f);
-		const float fade = sinf(phase * 3.14159f);
-		dc.Draw()->DrawImage(ImageID("I_CIRCLE"), x, y, 0.15f + 0.35f * r2, colorAlpha(accent, 0.22f * fade), ALIGN_CENTER);
+	const uint32_t glow = PartColor(TryledColor::Glow, ThemeAccent(dc)) & 0xFFFFFF;
+	const float tnow = (float)now * std::min(AnimSpeed(), 2.0f);
+	auto rnd = [](int i, float k) { return fmodf(sinf(i * k) * 43758.547f, 1.0f) * 0.5f + 0.5f; };
+	switch (g_Config.iTryledBgEffect) {
+	case 0:  // Particles of light drifting up.
+		for (int i = 0; i < 22; i++) {
+			const float r1 = rnd(i, 12.9898f), r2 = rnd(i, 78.233f), r3 = rnd(i, 39.425f);
+			const float phase = fmodf(r1 + tnow * (0.012f + 0.02f * r2), 1.0f);
+			const float x = b.x + b.w * (0.35f + 0.65f * r3) + sinf(tnow * 0.4f + i) * 18.0f;
+			const float y = b.y2() - phase * (b.h + 40.0f);
+			dc.Draw()->DrawImage(ImageID("I_CIRCLE"), x, y, 0.15f + 0.35f * r2, colorAlpha(glow, 0.22f * sinf(phase * 3.14159f)), ALIGN_CENTER);
+		}
+		break;
+	case 1:  // Twinkling stars.
+		for (int i = 0; i < 60; i++) {
+			const float x = b.x + b.w * rnd(i, 12.9898f), y = b.y + b.h * rnd(i, 78.233f);
+			const float a = 0.15f + 0.6f * (0.5f + 0.5f * sinf(tnow * (1.0f + 2.0f * rnd(i, 3.7f)) + i));
+			TryledDraw::FillRoundRect(dc, Bounds::FromCenter(x, y, 1.2f), 1.2f, colorAlpha(0xFFFFFF, a));
+		}
+		break;
+	case 2:  // Aurora: big soft color blobs moving slowly.
+		for (int i = 0; i < 3; i++) {
+			const float cx = b.x + b.w * (0.3f + 0.25f * i) + sinf(tnow * 0.15f + i * 2.0f) * b.w * 0.12f;
+			const float cy = b.y + b.h * (0.25f + 0.15f * i) + cosf(tnow * 0.12f + i) * b.h * 0.1f;
+			const uint32_t col = i == 1 ? (dc.GetTheme().itemDownStyle.background.color & 0xFFFFFF) : glow;
+			TryledDraw::RadialEllipse(dc, cx, cy, b.w * 0.3f, b.h * 0.45f, colorAlpha(col, 0.16f), colorAlpha(col, 0.0f));
+		}
+		break;
+	case 3:  // Pixels falling.
+		for (int i = 0; i < 18; i++) {
+			const float phase = fmodf(rnd(i, 12.9898f) + tnow * (0.05f + 0.08f * rnd(i, 7.1f)), 1.0f);
+			const float x = b.x + b.w * rnd(i, 39.425f);
+			const float y = b.y + phase * (b.h + 20.0f) - 10.0f;
+			dc.FillRect(UI::Drawable(colorAlpha(glow, 0.35f)), Bounds(x, y, 6.0f, 6.0f));
+		}
+		break;
+	default:
+		break;
 	}
 }
 
@@ -403,8 +459,9 @@ void DrawConsoleArt(UIContext &dc, Draw::Texture *texture, float alpha, double n
 	}
 	w *= 1.08f;
 	h *= 1.08f;
-	const float dx = sinf((float)now * 0.06f) * sb.w * 0.018f;
-	const float dy = cosf((float)now * 0.045f) * sb.h * 0.014f;
+	const bool drift = g_Config.bTryledDrift && !LiteMode() && g_Config.iTryledAnimSpeed != 3;
+	const float dx = drift ? sinf((float)now * 0.06f) * sb.w * 0.018f : 0.0f;
+	const float dy = drift ? cosf((float)now * 0.045f) * sb.h * 0.014f : 0.0f;
 	Bounds art = Bounds::FromCenterWH(sb.centerX() + dx, sb.centerY() + dy, w, h);
 	dc.Flush();
 	dc.GetDrawContext()->BindTexture(0, texture);
@@ -439,8 +496,9 @@ std::string ClockString() {
 
 // ---- Tryled console home: views (layout and look follow the approved preview) ----
 
-static const float kTile = 56.0f;      // Unselected game tile (square).
-static const float kTileSel = 84.0f;   // Selected game tile.
+// Tile size from Personalizar > Letra y forma; the selected one is 1.5 times bigger.
+static float TileSize() { return (float)std::clamp(g_Config.iTryledTileSize, 44, 72); }
+static float TileSizeSelected() { return TileSize() * 1.5f; }
 // Corner radius and border width for tiles, cards and the box art (Ajustes > Temas / Personalizar).
 static float CornerRadius() { return (float)std::clamp(g_Config.iTryledCornerRadius, 0, 30); }
 static float BorderWidth() { return (float)std::clamp(g_Config.iTryledBorderWidth, 0, 4); }
@@ -568,7 +626,8 @@ public:
 	}
 
 	void GetContentDimensions(const UIContext &dc, float &w, float &h) const override {
-		w = h = kTile + (kTileSel - kTile) * grow_;
+		const float g = g_Config.iTryledSelectEffect == 1 ? 0.0f : grow_;  // "Brillar" keeps the size.
+		w = h = TileSize() + (TileSizeSelected() - TileSize()) * g;
 	}
 
 	void FocusChanged(UI::FocusFlags focusFlags) override {
@@ -582,17 +641,22 @@ public:
 		const double now = time_now_d();
 		const float dt = lastDraw_ > 0.0 ? (float)std::min(now - lastDraw_, 0.1) : 1.0f;
 		lastDraw_ = now;
-		grow_ += ((selected ? 1.0f : 0.0f) - grow_) * std::min(1.0f, dt * 14.0f);
+		grow_ += ((selected ? 1.0f : 0.0f) - grow_) * std::min(1.0f, dt * 14.0f * std::min(AnimSpeed(), 4.0f));
 
 		const float intro = EaseOut(float(now - s_consoleOpenTime - index_ * 0.04) / 0.45f);
 		Bounds b = bounds_;
 		b.y -= (1.0f - intro) * 26.0f;
-		const uint32_t accent = ThemeAccent(dc);
+		if (g_Config.iTryledSelectEffect == 2 && g_Config.iTryledAnimSpeed != 3)  // "Flotar".
+			b.y -= grow_ * (3.0f + 3.0f * sinf((float)now * 2.4f));
+		const uint32_t accent = PartColor(TryledColor::Glow, ThemeAccent(dc));
+		const uint32_t frame = PartColor(TryledColor::Selection, ThemeFg(dc));
+		const float glowBoost = g_Config.iTryledSelectEffect == 1 ? 1.6f : 1.0f;
 
 		if (grow_ > 0.01f) {
 			const float pulse = 0.75f + 0.25f * sinf((float)now * 2.6f);
-			TryledDraw::Glow(dc, b.Expand(3.0f), CornerRadius() + 3.0f, 18.0f, WithAlpha(accent, 0.9f * grow_ * pulse * intro));
-			TryledDraw::StrokeRoundRect(dc, b.Expand(5.0f), CornerRadius() + 5.0f, 2.0f, WithAlpha(ThemeFg(dc), grow_ * intro));
+			if (GlowOn())
+				TryledDraw::Glow(dc, b.Expand(3.0f), CornerRadius() + 3.0f, 18.0f * glowBoost, WithAlpha(accent, std::min(1.0f, 0.9f * glowBoost * grow_ * pulse * intro)));
+			TryledDraw::StrokeRoundRect(dc, b.Expand(5.0f), CornerRadius() + 5.0f, 2.0f, WithAlpha(frame, grow_ * intro));
 		}
 		const float bright = 0.78f + 0.22f * grow_;
 		DrawGameArt(dc, path_, console_, b, CornerRadius(), false, WithAlpha(colorBlend(0xFFFFFF, 0x000000, bright), intro));
@@ -708,8 +772,8 @@ public:
 	}
 	void Draw(UIContext &dc) override {
 		const bool white = g_Config.sThemeName == "Negro total";
-		uint32_t bg = white ? WithAlpha(ThemeFg(dc), 0.92f) : ThemeAccent(dc);
-		uint32_t fg = white ? (dc.GetTheme().backgroundColor | 0xFF000000) : ThemeAccentText(dc);
+		uint32_t bg = PartColor(TryledColor::PlayButton, white ? WithAlpha(ThemeFg(dc), 0.92f) : ThemeAccent(dc));
+		uint32_t fg = PartColor(TryledColor::PlayText, white ? (dc.GetTheme().backgroundColor | 0xFF000000) : ThemeAccentText(dc));
 		if (down_) {
 			bg = dc.GetTheme().itemDownStyle.background.color;
 			fg = dc.GetTheme().itemDownStyle.fgColor;
@@ -717,8 +781,8 @@ public:
 		Bounds b = bounds_;
 		if (HasFocus())
 			b = b.Expand(2.0f);
-		if (!white)
-			TryledDraw::Glow(dc, b, b.h * 0.5f, 14.0f, WithAlpha(ThemeAccent(dc), 0.6f));
+		if (!white && GlowOn())
+			TryledDraw::Glow(dc, b, b.h * 0.5f, 14.0f, WithAlpha(PartColor(TryledColor::Glow, ThemeAccent(dc)), 0.6f));
 		TryledDraw::FillRoundRect(dc, b, b.h * 0.5f, bg);
 		if (HasFocus())
 			TryledDraw::StrokeRoundRect(dc, b.Expand(4.0f), b.h * 0.5f + 4.0f, 2.0f, ThemeAccent(dc));
@@ -781,7 +845,7 @@ public:
 			float tw, th;
 			dc.MeasureText(dc.GetTheme().uiFontSmall, 0.8f, 0.8f, pills[i], &tw, &th);
 			Bounds pb(x - tw - 18.0f, y, tw + 18.0f, 26.0f);
-			TryledDraw::FillRoundRect(dc, pb, 9.0f, WithAlpha(ThemePanel(dc), 0.92f * t));
+			TryledDraw::FillRoundRect(dc, pb, 9.0f, WithAlpha(PartColor(TryledColor::Cards, ThemePanel(dc)), 0.92f * t));
 			TryledDraw::StrokeRoundRect(dc, pb, 9.0f, 1.0f, WithAlpha(ThemeFg(dc), 0.12f * t));
 			dc.SetFontScale(0.8f, 0.8f);
 			dc.DrawText(pills[i], pb.centerX(), pb.centerY(), WithAlpha(ThemeFg(dc), t), ALIGN_CENTER);
@@ -799,7 +863,7 @@ public:
 	void Draw(UIContext &dc) override {
 		const uint32_t fg = ThemeFg(dc);
 		const uint32_t accent = ThemeAccent(dc);
-		TryledDraw::FillRoundRect(dc, bounds_, CornerRadius(), WithAlpha(ThemePanel(dc), 0.9f));
+		TryledDraw::FillRoundRect(dc, bounds_, CornerRadius(), WithAlpha(PartColor(TryledColor::Cards, ThemePanel(dc)), 0.9f));
 		TryledDraw::StrokeRoundRect(dc, bounds_, CornerRadius(), std::max(1.0f, BorderWidth()), WithAlpha(fg, BorderWidth() > 0.0f ? 0.35f : 0.1f));
 		static const char *const titles[3] = { "Tiempo jugado", "Partidas guardadas", "Ajustes del juego" };
 		const float x = bounds_.x + 14.0f;
@@ -1030,7 +1094,7 @@ public:
 		h = 44.0f;
 	}
 	void Draw(UIContext &dc) override {
-		const uint32_t accent = ThemeAccent(dc);
+		const uint32_t accent = PartColor(TryledColor::Tab, ThemeAccent(dc));
 		uint32_t fg = dc.GetTheme().infoStyle.fgColor;
 		if (!selected_)
 			fg = colorAlpha(fg & 0xFFFFFF, 0.5f);
@@ -1160,6 +1224,8 @@ void MainScreen::CreateConsoleViews() {
 	topBar->Add(new ConsoleIconButton(ImageID("I_GEAR"), 38.0f, false))->OnClick.Handle(this, &MainScreen::OnGameSettings);
 	topBar->Add(new ConsoleAvatar());
 	consoleClock_ = topBar->Add(new TextView(ClockString(), ALIGN_VCENTER, true, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, 0.0f, Gravity::G_VCENTER, Margins(6, 0, 0, 0))));
+	if (!g_Config.bTryledShowClock)
+		consoleClock_->SetVisibility(V_GONE);
 
 	// The row of games.
 	ScrollView *rowScroll = home->Add(new ScrollView(ORIENT_HORIZONTAL, new AnchorLayoutParams(FILL_PARENT, 104.0f, 0.0f, 54.0f, 0.0f, NONE)));
@@ -1182,20 +1248,20 @@ void MainScreen::CreateConsoleViews() {
 		if (i == s_tryledSelected)
 			firstTile = tile;
 	}
-	row->Add(new ConsoleIconButton(ImageID("I_GRID"), kTile, true, 0.6f))->OnClick.Add([this](EventParams &) {
+	row->Add(new ConsoleIconButton(ImageID("I_GRID"), TileSize(), true, 0.6f))->OnClick.Add([this](EventParams &) {
 		s_tryledLibraryMode = true;
 		RecreateViews();
 	});
 	row->Add(new Spacer(16.0f));
 	if (s_tryledSelected > 4)
-		rowScroll->ScrollTo((s_tryledSelected - 4) * (kTile + 12.0f));
+		rowScroll->ScrollTo((s_tryledSelected - 4) * (TileSize() + 12.0f));
 
 	// Selected game, bottom left: big title, console badge + line, Play and "···".
 	LinearLayout *hero = home->Add(new LinearLayout(ORIENT_VERTICAL, new AnchorLayoutParams(screen.w * 0.58f, WRAP_CONTENT, 30.0f, NONE, NONE, 92.0f)));
 	hero->SetSpacing(2.0f);
 	consoleSmallName_ = hero->Add(new TextView("", new LinearLayoutParams(0.0f, 0.0f)));
 	consoleSmallName_->SetVisibility(V_GONE);
-	consoleTitle_ = hero->Add(new ConsoleAnimText(1.75f, false, 0.05f, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
+	consoleTitle_ = hero->Add(new ConsoleAnimText(1.75f * std::clamp(g_Config.iTryledTitleScale, 70, 130) / 100.0f, false, 0.05f, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
 	consoleSub_ = hero->Add(new ConsoleSubText(new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
 
 	LinearLayout *buttons = hero->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, Margins(0, 14, 0, 0))));
@@ -1218,13 +1284,18 @@ void MainScreen::CreateConsoleViews() {
 	}
 
 	// Right: artwork card with pills.
-	home->Add(new ConsoleArtCard(new AnchorLayoutParams(150.0f, 188.0f, NONE, NONE, 30.0f, 92.0f)));
+	if (g_Config.bTryledArtCard)
+		home->Add(new ConsoleArtCard(new AnchorLayoutParams(150.0f, 188.0f, NONE, NONE, 30.0f, 92.0f)));
 
 	// Bottom cards, peeking from the bottom edge; the home slides up to show them.
-	LinearLayout *cards = home->Add(new LinearLayout(ORIENT_HORIZONTAL, new AnchorLayoutParams(FILL_PARENT, 150.0f, 24.0f, screen.h - 70.0f, 24.0f, NONE)));
-	cards->SetSpacing(12.0f);
-	for (int i = 0; i < 3; i++)
-		cards->Add(new ConsoleInfoCard(i));
+	if (g_Config.bTryledBottomCards) {
+		LinearLayout *cards = home->Add(new LinearLayout(ORIENT_HORIZONTAL, new AnchorLayoutParams(FILL_PARENT, 150.0f, 24.0f, screen.h - 70.0f, 24.0f, NONE)));
+		cards->SetSpacing(12.0f);
+		for (int i = 0; i < 3; i++)
+			cards->Add(new ConsoleInfoCard(i));
+	} else {
+		consoleShift_ = nullptr;  // Nothing to slide up to.
+	}
 
 	root_->SetDefaultFocusView(firstTile ? firstTile : playButton);
 	root_->SetTag("mainroot");
@@ -1651,7 +1722,7 @@ void MainScreen::update() {
 	// Game info loads asynchronously, and the clock ticks: refresh the console home now and then.
 	if (consoleTitle_ && !s_startupSoundPlayed && time_now_d() - s_consoleOpenTime > 0.3) {
 		s_startupSoundPlayed = true;
-		if (g_Config.bUISound) {
+		if (g_Config.bUISound && g_Config.bTryledStartupSound) {
 			g_BackgroundAudio.SFX().Play(UI::UISound::STARTUP, Volume100ToMultiplier(g_Config.iUIVolume));
 		}
 	}
@@ -1715,7 +1786,10 @@ void MainScreen::DrawBackground(UIContext &dc) {
 			dc.FillRect(UI::Drawable(colorAlpha(bg, 0.95f * t)), Bounds(b.x, b.y2() - fadeH + fadeH * i / (strips / 2), b.w, fadeH / (strips / 2) + 1.0f));
 		}
 		// Soft glow from the top edge, in the theme accent color (Tryled's own touch, not a wave).
-		TryledDraw::RadialEllipse(dc, b.centerX(), b.y - b.h * 0.12f, b.w * 0.7f, b.h * 0.42f, WithAlpha(ThemeAccent(dc), 0.26f), WithAlpha(ThemeAccent(dc), 0.0f));
+		if (!LiteMode()) {
+			const uint32_t aura = PartColor(TryledColor::Glow, ThemeAccent(dc));
+			TryledDraw::RadialEllipse(dc, b.centerX(), b.y - b.h * 0.12f, b.w * 0.7f, b.h * 0.42f, WithAlpha(aura, 0.26f), WithAlpha(aura, 0.0f));
+		}
 		DrawConsoleAmbient(dc, now);
 		dc.Flush();
 		return;

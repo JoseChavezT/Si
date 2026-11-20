@@ -18,6 +18,7 @@
 #include "ppsspp_config.h"
 
 #include <algorithm>
+#include <map>
 
 #include "UI/Theme.h"
 
@@ -28,6 +29,7 @@
 #include "Common/Data/Text/I18n.h"
 #include "Common/Render/Text/draw_text.h"
 #include "Core/Config.h"
+#include "Common/StringUtils.h"
 
 #include "Common/UI/View.h"
 #include "Common/UI/Context.h"
@@ -196,6 +198,100 @@ static UI::Style MakeStyle(uint32_t fg, uint32_t bg) {
 	return s;
 }
 
+// ---------------------------------------------------------------------------
+// Tryled color overrides. Stored in g_Config.sTryledThemeColors as
+//   "Theme name=key:RRGGBB,key:RRGGBB;Other theme=..."
+// ---------------------------------------------------------------------------
+
+static const char *const g_tryledColorKeys[(int)TryledColor::COUNT] = {
+	"bg", "acc", "tab", "sel", "title", "text", "card", "btn", "btnt", "glow"
+};
+
+static std::map<std::string, std::map<std::string, uint32_t>> ParseTryledColors() {
+	std::map<std::string, std::map<std::string, uint32_t>> result;
+	std::vector<std::string> entries;
+	SplitString(g_Config.sTryledThemeColors, ';', entries);
+	for (const std::string &entry : entries) {
+		size_t eq = entry.find('=');
+		if (eq == std::string::npos)
+			continue;
+		auto &colors = result[entry.substr(0, eq)];
+		std::vector<std::string> pairs;
+		SplitString(entry.substr(eq + 1), ',', pairs);
+		for (const std::string &kv : pairs) {
+			size_t colon = kv.find(':');
+			if (colon == std::string::npos)
+				continue;
+			const uint32_t rgb = (uint32_t)strtoul(kv.substr(colon + 1).c_str(), nullptr, 16);
+			// RRGGBB -> 0xAABBGGRR
+			colors[kv.substr(0, colon)] = 0xFF000000 | ((rgb & 0xFF) << 16) | (rgb & 0xFF00) | ((rgb >> 16) & 0xFF);
+		}
+	}
+	return result;
+}
+
+static void StoreTryledColors(const std::map<std::string, std::map<std::string, uint32_t>> &all) {
+	std::string out;
+	for (const auto &theme : all) {
+		if (theme.second.empty())
+			continue;
+		if (!out.empty())
+			out += ";";
+		out += theme.first + "=";
+		bool first = true;
+		for (const auto &kv : theme.second) {
+			const uint32_t c = kv.second;
+			const uint32_t rgb = ((c & 0xFF) << 16) | (c & 0xFF00) | ((c >> 16) & 0xFF);
+			char buf[32];
+			snprintf(buf, sizeof(buf), "%s%s:%06X", first ? "" : ",", kv.first.c_str(), rgb);
+			out += buf;
+			first = false;
+		}
+	}
+	g_Config.sTryledThemeColors = out;
+}
+
+bool HasTryledColor(TryledColor c) {
+	auto all = ParseTryledColors();
+	auto it = all.find(g_Config.sThemeName);
+	return it != all.end() && it->second.count(g_tryledColorKeys[(int)c]) > 0;
+}
+
+uint32_t GetTryledColor(TryledColor c, uint32_t fallback) {
+	auto all = ParseTryledColors();
+	auto it = all.find(g_Config.sThemeName);
+	if (it == all.end())
+		return fallback;
+	auto kv = it->second.find(g_tryledColorKeys[(int)c]);
+	return kv == it->second.end() ? fallback : kv->second;
+}
+
+void SetTryledColor(TryledColor c, uint32_t color, bool set) {
+	auto all = ParseTryledColors();
+	auto &colors = all[g_Config.sThemeName];
+	if (set)
+		colors[g_tryledColorKeys[(int)c]] = color | 0xFF000000;
+	else
+		colors.erase(g_tryledColorKeys[(int)c]);
+	StoreTryledColors(all);
+	UpdateTheme();
+}
+
+void ResetTryledColors() {
+	auto all = ParseTryledColors();
+	all.erase(g_Config.sThemeName);
+	StoreTryledColors(all);
+	UpdateTheme();
+}
+
+static uint32_t MixColors(uint32_t a, uint32_t b, float t) {
+	auto ch = [&](int shift) {
+		const float x = ((a >> shift) & 0xFF) * (1.0f - t) + ((b >> shift) & 0xFF) * t;
+		return ((uint32_t)x & 0xFF) << shift;
+	};
+	return ch(0) | ch(8) | ch(16) | ch(24);
+}
+
 void UpdateTheme() {
 	// First run, get the default in at least
 	if (themeInfos.empty()) {
@@ -273,6 +369,36 @@ void UpdateTheme() {
 	ui_theme.scrollbarColor = themeInfo.uScrollbarColor;
 
 	ui_theme.popupSliderColor = themeInfo.uPopupSliderColor;
+
+	// Tryled: per-theme background and accent overrides (Personalizar > Temas).
+	{
+		auto all = ParseTryledColors();
+		auto it = all.find(themeInfo.name);
+		if (it != all.end()) {
+			auto bg = it->second.find("bg");
+			if (bg != it->second.end()) {
+				const uint32_t fg = themeInfo.uItemStyleFg;
+				ui_theme.backgroundColor = bg->second;
+				const uint32_t panel = MixColors(bg->second, fg | 0xFF000000, 0.08f);
+				ui_theme.itemStyle.background = UI::Drawable(panel);
+				ui_theme.popupStyle.background = UI::Drawable(MixColors(bg->second, fg | 0xFF000000, 0.12f));
+				ui_theme.collapsibleHeaderStyle.background = UI::Drawable(panel);
+			}
+			auto acc = it->second.find("acc");
+			if (acc != it->second.end()) {
+				ui_theme.itemFocusedStyle.background = UI::Drawable(acc->second);
+				ui_theme.itemDownStyle.background = UI::Drawable(MixColors(acc->second, 0xFF000000, 0.2f));
+				ui_theme.headerStyle.fgColor = acc->second;
+				ui_theme.popupTitleStyle.fgColor = acc->second;
+				ui_theme.popupSliderFocusedColor = acc->second;
+				ui_theme.scrollbarColor = (acc->second & 0xFFFFFF) | 0x80000000;
+			}
+		}
+	}
+
+	// Tryled: rounded items everywhere, following the corner setting (Personalizar > Letra y forma).
+	ui_theme.itemRadius = std::clamp(g_Config.iTryledCornerRadius, 0, 30) * 0.75f;
+	ui_theme.itemGap = ui_theme.itemRadius > 0.0f ? 4.0f : 0.0f;
 	ui_theme.popupSliderFocusedColor = themeInfo.uPopupSliderFocusedColor;
 }
 

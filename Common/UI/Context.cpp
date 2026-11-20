@@ -1,6 +1,7 @@
 #include "ppsspp_config.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "Common/System/Display.h"
 #include "Common/System/System.h"
@@ -8,6 +9,7 @@
 #include "Common/UI/View.h"
 #include "Common/UI/Context.h"
 #include "Common/Render/DrawBuffer.h"
+#include "Common/Render/TextureAtlas.h"
 #include "Common/Render/Text/draw_text.h"
 #include "Common/Render/ManagedTexture.h"
 #include "Common/Log.h"
@@ -382,6 +384,40 @@ void UIContext::FillRect(const UI::Drawable &drawable, const Bounds &bounds) {
 	case UI::DRAW_NOTHING:
 		break;
 	} 
+}
+
+void UIContext::FillRoundRect(const UI::Drawable &drawable, const Bounds &bounds, float radius) {
+	if (drawable.type != UI::DRAW_SOLID_COLOR || radius <= 0.5f) {
+		FillRect(drawable, bounds);
+		return;
+	}
+	if ((drawable.color & 0xFF000000) == 0 || bounds.w <= 0.0f || bounds.h <= 0.0f)
+		return;
+	radius = std::min(radius, std::min(bounds.w, bounds.h) * 0.5f);
+	const AtlasImage *img = uidrawbuffer_->GetAtlas()->getImage(theme->whiteImage);
+	const float u = img ? (img->u1 + img->u2) * 0.5f : 0.0f;
+	const float v = img ? (img->v1 + img->v2) * 0.5f : 0.0f;
+	const int seg = 6;
+	const float cx[4] = { bounds.x + radius, bounds.x2() - radius, bounds.x2() - radius, bounds.x + radius };
+	const float cy[4] = { bounds.y + radius, bounds.y + radius, bounds.y2() - radius, bounds.y2() - radius };
+	const float start[4] = { 3.14159265f, 4.71238898f, 0.0f, 1.57079633f };
+	float px[4 * (seg + 1)], py[4 * (seg + 1)];
+	int n = 0;
+	for (int c = 0; c < 4; c++) {
+		for (int i = 0; i <= seg; i++) {
+			const float a = start[c] + 1.57079633f * i / seg;
+			px[n] = cx[c] + cosf(a) * radius;
+			py[n] = cy[c] + sinf(a) * radius;
+			n++;
+		}
+	}
+	const float mx = bounds.centerX(), my = bounds.centerY();
+	for (int i = 0; i < n; i++) {
+		const int j = (i + 1) % n;
+		uidrawbuffer_->V(mx, my, drawable.color, u, v);
+		uidrawbuffer_->V(px[i], py[i], drawable.color, u, v);
+		uidrawbuffer_->V(px[j], py[j], drawable.color, u, v);
+	}
 }
 
 void UIContext::DrawRectDropShadow(const Bounds &bounds, float radius, float alpha, uint32_t color) {

@@ -564,7 +564,14 @@ void SoundEffectMixer::LoadDefaultSample(UI::UISound sound) {
 		return;
 	}
 
-	Sample *sample = Sample::Load(filename);
+	// Tryled: the chosen sound pack (Personalizar > Sonidos) lives in sounds/<pack>/; "cristal" is the default set.
+	Sample *sample = nullptr;
+	if (!g_Config.sTryledSoundPack.empty() && g_Config.sTryledSoundPack != "cristal" &&
+		sound != UI::UISound::ACHIEVEMENT_UNLOCKED && sound != UI::UISound::LEADERBOARD_SUBMITTED) {
+		sample = Sample::Load(std::string("sounds/") + g_Config.sTryledSoundPack + "/" + filename);
+	}
+	if (!sample)
+		sample = Sample::Load(filename);
 	if (!sample) {
 		ERROR_LOG(Log::Audio, "Failed to load the default sample for UI sound %d", (int)sound);
 	}
@@ -591,6 +598,8 @@ void SoundEffectMixer::Init() {
 
 	// Setup UI sound callback. For navigation sounds only.
 	UI::SetSoundCallback([](UI::UISound sound) {
+		if (sound == UI::UISound::SELECT && !g_Config.bTryledNavSound)
+			return;
 		if (g_Config.bUISound) {
 			float volume = Volume100ToMultiplier(g_Config.iUIVolume);
 			g_BackgroundAudio.SFX().Play(sound, volume);
@@ -598,6 +607,10 @@ void SoundEffectMixer::Init() {
 	});
 
 	// Load samples in the background.
+	g_threadManager.EnqueueTask(new SampleLoadTask(this));
+}
+
+void SoundEffectMixer::ReloadSamples() {
 	g_threadManager.EnqueueTask(new SampleLoadTask(this));
 }
 

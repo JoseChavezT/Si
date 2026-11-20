@@ -436,6 +436,23 @@ public:
 	std::string sTryledGamesFolder;  // Tryled: folder scanned for the console home.
 	int iTryledCornerRadius;  // Tryled: rounded corners of tiles, cards and buttons, in UI pixels.
 	int iTryledBorderWidth;   // Tryled: border around tiles and cards (0 = none).
+	// Tryled: Personalizar.
+	std::string sTryledThemeColors;  // Per-theme color overrides, see Theme.cpp.
+	int iTryledTitleScale;      // Home title size, percent.
+	bool bTryledUpperTitles;
+	int iTryledTileSize;        // Home tile size, UI pixels.
+	bool bTryledGlow;
+	int iTryledAnimSpeed;       // 0 slow, 1 normal, 2 fast, 3 none.
+	int iTryledSelectEffect;    // 0 grow, 1 glow, 2 float.
+	int iTryledBgEffect;        // 0 particles, 1 stars, 2 aurora, 3 pixels, 4 none.
+	bool bTryledDrift;
+	std::string sTryledSoundPack;
+	bool bTryledNavSound;
+	bool bTryledStartupSound;
+	bool bTryledShowClock;
+	bool bTryledArtCard;
+	bool bTryledBottomCards;
+	bool bTryledLite;
 
 	// These aren't saved, just for instant debugging.
 	bool bLogFrameDrops;

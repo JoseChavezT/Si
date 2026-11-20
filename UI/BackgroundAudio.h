@@ -33,6 +33,8 @@ public:
 
 	void UpdateSample(UI::UISound sound, Sample *sample);
 	void LoadDefaultSample(UI::UISound sound);
+	// Tryled: reload the UI sounds, e.g. after picking another sound pack.
+	void ReloadSamples();
 
 	std::vector<std::unique_ptr<Sample>> samples_;
 

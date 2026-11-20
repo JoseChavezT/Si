@@ -112,6 +112,11 @@ struct Theme {
 
 	Style tooltipStyle;
 
+	// Tryled: rounded corners for item backgrounds (0 = square, like PPSSPP), and the gap
+	// left between stacked items when they are rounded.
+	float itemRadius = 0.0f;
+	float itemGap = 0.0f;
+
 	uint32_t backgroundColor;
 	uint32_t scrollbarColor;
 	uint32_t popupSliderColor;
@@ -555,6 +560,8 @@ protected:
 	// Use it for checking/unchecking checkboxes, etc.
 	virtual void ClickInternal();
 	void DrawBG(UIContext &dc, const Style &style);
+	// Where the background goes: the bounds, minus a small gap between stacked items when they are rounded (Tryled).
+	Bounds ItemBackgroundBounds(const UIContext &dc) const;
 
 	CallbackColorTween *bgColor_ = nullptr;
 	float bgColorLast_ = 0.0f;

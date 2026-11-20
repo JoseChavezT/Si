@@ -1140,6 +1140,22 @@ static const ConfigSetting themeSettings[] = {
 	ConfigSetting("TryledGamesFolder", SETTING(g_Config, sTryledGamesFolder), "", CfgFlag::DEFAULT),
 	ConfigSetting("TryledCornerRadius", SETTING(g_Config, iTryledCornerRadius), 12, CfgFlag::DEFAULT),
 	ConfigSetting("TryledBorderWidth", SETTING(g_Config, iTryledBorderWidth), 0, CfgFlag::DEFAULT),
+	ConfigSetting("TryledThemeColors", SETTING(g_Config, sTryledThemeColors), "", CfgFlag::DEFAULT),
+	ConfigSetting("TryledTitleScale", SETTING(g_Config, iTryledTitleScale), 100, CfgFlag::DEFAULT),
+	ConfigSetting("TryledUpperTitles", SETTING(g_Config, bTryledUpperTitles), false, CfgFlag::DEFAULT),
+	ConfigSetting("TryledTileSize", SETTING(g_Config, iTryledTileSize), 56, CfgFlag::DEFAULT),
+	ConfigSetting("TryledGlow", SETTING(g_Config, bTryledGlow), true, CfgFlag::DEFAULT),
+	ConfigSetting("TryledAnimSpeed", SETTING(g_Config, iTryledAnimSpeed), 1, CfgFlag::DEFAULT),
+	ConfigSetting("TryledSelectEffect", SETTING(g_Config, iTryledSelectEffect), 0, CfgFlag::DEFAULT),
+	ConfigSetting("TryledBgEffect", SETTING(g_Config, iTryledBgEffect), 0, CfgFlag::DEFAULT),
+	ConfigSetting("TryledDrift", SETTING(g_Config, bTryledDrift), true, CfgFlag::DEFAULT),
+	ConfigSetting("TryledSoundPack", SETTING(g_Config, sTryledSoundPack), "cristal", CfgFlag::DEFAULT),
+	ConfigSetting("TryledNavSound", SETTING(g_Config, bTryledNavSound), true, CfgFlag::DEFAULT),
+	ConfigSetting("TryledStartupSound", SETTING(g_Config, bTryledStartupSound), true, CfgFlag::DEFAULT),
+	ConfigSetting("TryledShowClock", SETTING(g_Config, bTryledShowClock), true, CfgFlag::DEFAULT),
+	ConfigSetting("TryledArtCard", SETTING(g_Config, bTryledArtCard), true, CfgFlag::DEFAULT),
+	ConfigSetting("TryledBottomCards", SETTING(g_Config, bTryledBottomCards), true, CfgFlag::DEFAULT),
+	ConfigSetting("TryledLite", SETTING(g_Config, bTryledLite), false, CfgFlag::DEFAULT),
 };
 
 static const ConfigSetting vrSettings[] = {

@@ -52,6 +52,8 @@ private:
 	void PreCreateViews() override;
 
 	void CreateThemeSettings(UI::ViewGroup *themeSettings);
+	void CreateGamepadSettings(UI::ViewGroup *parent);
+	void AddColorRow(UI::ViewGroup *parent, std::string_view label, int which, const std::vector<uint32_t> &palette, bool allowAuto);
 	void CreateGraphicsSettings(UI::ViewGroup *graphicsSettings);
 	void CreateControlsSettings(UI::ViewGroup *tools);
 	void CreateAudioSettings(UI::ViewGroup *audioSettings);

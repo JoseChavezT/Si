@@ -108,6 +108,8 @@ public:
 	float CalculateTextScale(std::string_view str, float availWidth) const;
 
 	void FillRect(const UI::Drawable &drawable, const Bounds &bounds);
+	// Solid color rectangle with rounded corners (falls back to FillRect for non-solid drawables or radius 0).
+	void FillRoundRect(const UI::Drawable &drawable, const Bounds &bounds, float radius);
 	void DrawRectDropShadow(const Bounds &bounds, float radius, float alpha, uint32_t color = 0);
 	void DrawImageVGradient(ImageID image, uint32_t color1, uint32_t color2, const Bounds &bounds);
 	void DrawImageRotated(ImageID atlas_image, float x, float y, float scale, float angle, uint32_t color, bool mirror_h);

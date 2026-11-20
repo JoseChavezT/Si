@@ -57,6 +57,9 @@
 #include "UI/TiltAnalogSettingsScreen.h"
 #include "UI/MemStickScreen.h"
 #include "UI/Theme.h"
+#include "UI/TouchControlLayoutScreen.h"
+#include "UI/TouchControlVisibilityScreen.h"
+#include "UI/BackgroundAudio.h"
 #include "UI/RetroAchievementScreens.h"
 #include "UI/OnScreenDisplay.h"
 #include "UI/DiscordIntegration.h"
@@ -245,9 +248,14 @@ void GameSettingsScreen::CreateTabs() {
 	auto ms = GetI18NCategory(I18NCat::MAINSETTINGS);
 
 	// Tryled: themes get their own tab, first in the list.
-	AddTab("GameSettingsThemes", "Temas", ImageID("I_GRID"), [this](UI::LinearLayout *parent) {
-		parent->Add(new PaneTitleBar(gamePath_, "Temas", ""));
+	AddTab("GameSettingsThemes", "Personalizar", ImageID("I_SLIDERS"), [this](UI::LinearLayout *parent) {
+		parent->Add(new PaneTitleBar(gamePath_, "Personalizar", ""));
 		CreateThemeSettings(parent);
+	});
+
+	AddTab("GameSettingsGamepad", "Mando", ImageID("I_CONTROLLER"), [this](UI::LinearLayout *parent) {
+		parent->Add(new PaneTitleBar(gamePath_, "Mando", ""));
+		CreateGamepadSettings(parent);
 	});
 
 	AddTab("GameSettingsGraphics", ms->T("Graphics"), ImageID("I_DISPLAY"), [this](UI::LinearLayout *parent) {
@@ -323,9 +331,12 @@ public:
 		const float right = bounds_.x2() - 60.0f;
 		const float y = bounds_.centerY() - size * 0.5f;
 		// Outline so a black swatch is still visible on a black theme.
-		dc.FillRect(UI::Drawable(0x60FFFFFF), Bounds(right - size * 2.0f - 7.0f, y - 1.0f, size + 2.0f, size + 2.0f));
-		dc.FillRect(UI::Drawable(bgColor_ | 0xFF000000), Bounds(right - size * 2.0f - 6.0f, y, size, size));
-		dc.FillRect(UI::Drawable(accentColor_ | 0xFF000000), Bounds(right - size, y, size, size));
+		if (!hideSwatches_) {
+			// Outline so a black swatch is still visible on a black theme.
+			dc.FillRoundRect(UI::Drawable(0x60FFFFFF), Bounds(right - size * 2.0f - 7.0f, y - 1.0f, size + 2.0f, size + 2.0f), 4.0f);
+			dc.FillRoundRect(UI::Drawable(bgColor_ | 0xFF000000), Bounds(right - size * 2.0f - 6.0f, y, size, size), 3.0f);
+			dc.FillRoundRect(UI::Drawable(accentColor_ | 0xFF000000), Bounds(right - size, y, size, size), 3.0f);
+		}
 		if (isSelected_) {
 			dc.Draw()->DrawImage(ImageID("I_CHECKMARK"), bounds_.x2() - 30, bounds_.centerY(), 1.0f, style.fgColor, ALIGN_CENTER);
 		}
@@ -349,69 +360,386 @@ private:
 	uint32_t bgColor_;
 	uint32_t accentColor_;
 	bool isSelected_;
+	bool hideSwatches_ = false;
+public:
+	void HideSwatches() { hideSwatches_ = true; }
 };
 
 }  // namespace
 
+namespace {
+
+// A pill-shaped chip, for the Personalizar sections row.
+class TryledChip : public UI::Clickable {
+public:
+	TryledChip(std::string_view text, bool selected) : UI::Clickable(new UI::LinearLayoutParams(UI::WRAP_CONTENT, UI::WRAP_CONTENT, 0.0f, UI::Gravity::G_VCENTER)), text_(text), selected_(selected) {}
+	void GetContentDimensions(const UIContext &dc, float &w, float &h) const override {
+		float tw, th;
+		dc.MeasureText(dc.GetTheme().uiFontSmall, 1.0f, 1.0f, text_, &tw, &th);
+		w = tw + 28.0f;
+		h = 38.0f;
+	}
+	void Draw(UIContext &dc) override {
+		const UI::Theme &t = dc.GetTheme();
+		uint32_t bg = selected_ ? t.itemFocusedStyle.background.color : colorAlpha(t.infoStyle.fgColor & 0xFFFFFF, 0.08f);
+		uint32_t fg = selected_ ? t.itemFocusedStyle.fgColor : t.infoStyle.fgColor;
+		if (down_)
+			bg = t.itemDownStyle.background.color;
+		Bounds b = bounds_.Inset(0.0f, 3.0f);
+		dc.FillRoundRect(UI::Drawable(bg), b, b.h * 0.5f);
+		if (HasFocus() && !selected_)
+			dc.FillRoundRect(UI::Drawable(colorAlpha(t.infoStyle.fgColor & 0xFFFFFF, 0.18f)), b, b.h * 0.5f);
+		dc.SetFontStyle(t.uiFontSmall);
+		dc.DrawText(text_, b.centerX(), b.centerY(), fg, ALIGN_CENTER);
+		dc.SetFontStyle(t.uiFont);
+	}
+private:
+	std::string text_;
+	bool selected_;
+};
+
+// A round color swatch. kind: 0 = a color, 1 = "automatic" (theme color), 2 = "other color..." (opens the picker).
+class TryledSwatch : public UI::Clickable {
+public:
+	TryledSwatch(uint32_t color, int kind, bool selected) : UI::Clickable(new UI::LinearLayoutParams(34.0f, 34.0f, 0.0f, UI::Gravity::G_VCENTER)), color_(color), kind_(kind), selected_(selected) {}
+	void Draw(UIContext &dc) override {
+		const UI::Theme &t = dc.GetTheme();
+		const Bounds c = Bounds::FromCenter(bounds_.centerX(), bounds_.centerY(), 12.0f);
+		if (selected_ || HasFocus())
+			dc.FillRoundRect(UI::Drawable(selected_ ? t.infoStyle.fgColor : t.itemFocusedStyle.background.color), c.Expand(3.0f), 15.0f);
+		dc.FillRoundRect(UI::Drawable(t.backgroundColor | 0xFF000000), c.Expand(1.0f), 13.0f);
+		if (kind_ == 0) {
+			dc.FillRoundRect(UI::Drawable(color_ | 0xFF000000), c, 12.0f);
+		} else {
+			dc.FillRoundRect(UI::Drawable(colorAlpha(t.infoStyle.fgColor & 0xFFFFFF, 0.22f)), c, 12.0f);
+			dc.SetFontStyle(t.uiFontSmall);
+			dc.DrawText(kind_ == 1 ? "A" : "+", c.centerX(), c.centerY(), t.infoStyle.fgColor, ALIGN_CENTER);
+			dc.SetFontStyle(t.uiFont);
+		}
+	}
+private:
+	uint32_t color_;
+	int kind_;
+	bool selected_;
+};
+
+// Free color picker: hue, saturation and brightness sliders with a preview.
+class TryledColorPopup : public UI::PopupScreen {
+public:
+	TryledColorPopup(std::string_view title, uint32_t initial, std::function<void(uint32_t)> done)
+		: UI::PopupScreen(title, "OK", "Cancelar"), done_(done) {
+		// 0xAABBGGRR -> HSV
+		const float r = (initial & 0xFF) / 255.0f, g = ((initial >> 8) & 0xFF) / 255.0f, b = ((initial >> 16) & 0xFF) / 255.0f;
+		const float mx = std::max(r, std::max(g, b)), mn = std::min(r, std::min(g, b)), d = mx - mn;
+		float h = 0.0f;
+		if (d > 0.0f) {
+			if (mx == r) h = fmodf((g - b) / d, 6.0f);
+			else if (mx == g) h = (b - r) / d + 2.0f;
+			else h = (r - g) / d + 4.0f;
+			h *= 60.0f;
+			if (h < 0.0f) h += 360.0f;
+		}
+		h_ = (int)h;
+		s_ = mx > 0.0f ? (int)(d / mx * 100.0f) : 0;
+		v_ = (int)(mx * 100.0f);
+	}
+	const char *tag() const override { return "TryledColor"; }
+	static uint32_t HSV(int h, int s, int v) {
+		const float hh = h / 60.0f, ss = s / 100.0f, vv = v / 100.0f;
+		const int i = (int)hh % 6;
+		const float f = hh - floorf(hh);
+		const float p = vv * (1 - ss), q = vv * (1 - f * ss), t = vv * (1 - (1 - f) * ss);
+		float r, g, b;
+		switch (i) {
+		case 0: r = vv; g = t; b = p; break;
+		case 1: r = q; g = vv; b = p; break;
+		case 2: r = p; g = vv; b = t; break;
+		case 3: r = p; g = q; b = vv; break;
+		case 4: r = t; g = p; b = vv; break;
+		default: r = vv; g = p; b = q; break;
+		}
+		return 0xFF000000 | ((uint32_t)(b * 255) << 16) | ((uint32_t)(g * 255) << 8) | (uint32_t)(r * 255);
+	}
+	void CreatePopupContents(UI::ViewGroup *parent) override {
+		using namespace UI;
+		LinearLayout *col = parent->Add(new LinearLayout(ORIENT_VERTICAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
+		col->Add(new ColorPreview(this));
+		col->Add(new TextView("Tono", ALIGN_LEFT, true));
+		col->Add(new Slider(&h_, 0, 359, 1, new LinearLayoutParams(FILL_PARENT, 50.0f)));
+		col->Add(new TextView("Saturación", ALIGN_LEFT, true));
+		col->Add(new Slider(&s_, 0, 100, 1, new LinearLayoutParams(FILL_PARENT, 50.0f)));
+		col->Add(new TextView("Brillo", ALIGN_LEFT, true));
+		col->Add(new Slider(&v_, 0, 100, 1, new LinearLayoutParams(FILL_PARENT, 50.0f)));
+	}
+	void OnCompleted(DialogResult result) override {
+		if (result == DR_OK && done_)
+			done_(HSV(h_, s_, v_));
+	}
+private:
+	class ColorPreview : public UI::InertView {
+	public:
+		ColorPreview(TryledColorPopup *owner) : UI::InertView(new UI::LinearLayoutParams(UI::FILL_PARENT, 56.0f)), owner_(owner) {}
+		void Draw(UIContext &dc) override {
+			dc.FillRoundRect(UI::Drawable(HSV(owner_->h_, owner_->s_, owner_->v_)), bounds_.Inset(4.0f, 6.0f), 12.0f);
+		}
+	private:
+		TryledColorPopup *owner_;
+	};
+	int h_ = 0, s_ = 0, v_ = 0;
+	std::function<void(uint32_t)> done_;
+};
+
+uint32_t RGB(uint32_t rrggbb) {
+	return 0xFF000000 | ((rrggbb & 0xFF) << 16) | (rrggbb & 0xFF00) | ((rrggbb >> 16) & 0xFF);
+}
+
+}  // namespace
+
+static int s_personalizeSection = 0;
+
+// A row: label on the left, swatches on the right. Picking one sets (or clears, with "A") the theme color override.
+void GameSettingsScreen::AddColorRow(UI::ViewGroup *parent, std::string_view label, int which, const std::vector<uint32_t> &palette, bool allowAuto) {
+	using namespace UI;
+	const TryledColor c = (TryledColor)which;
+	const bool has = HasTryledColor(c);
+	const uint32_t current = GetTryledColor(c, 0);
+	// Name on top, swatches under it (fits narrow screens too).
+	parent->Add(new TextView(label, ALIGN_LEFT, false, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(12, 6, 12, 0))));
+	LinearLayout *row = parent->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, Margins(8, 0, 8, 4))));
+	row->SetSpacing(4.0f);
+	std::string labelStr(label);
+	if (allowAuto) {
+		row->Add(new TryledSwatch(0, 1, !has))->OnClick.Add([this, c](EventParams &) {
+			SetTryledColor(c, 0, false);
+			RecreateViews();
+		});
+	}
+	for (uint32_t rgb : palette) {
+		const uint32_t col = RGB(rgb);
+		row->Add(new TryledSwatch(col, 0, has && (current & 0xFFFFFF) == (col & 0xFFFFFF)))->OnClick.Add([this, c, col](EventParams &) {
+			SetTryledColor(c, col, true);
+			RecreateViews();
+		});
+	}
+	row->Add(new TryledSwatch(0, 2, false))->OnClick.Add([this, c, labelStr, current](EventParams &) {
+		screenManager()->push(new TryledColorPopup(labelStr, current ? current : 0xFFFFE500, [this, c](uint32_t col) {
+			SetTryledColor(c, col, true);
+			RecreateViews();
+		}));
+	});
+}
+
 void GameSettingsScreen::CreateThemeSettings(UI::ViewGroup *themeSettings) {
 	using namespace UI;
 	auto co = GetI18NCategory(I18NCat::CONTROLS);
-
-	themeSettings->Add(new ItemHeader("Elige un tema"));
-	themeSettings->Add(new TextView("El tema cambia los menús, el fondo y los controles táctiles a la vez.", FLAG_WRAP_TEXT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(12, 4, 12, 8))));
-
-	auto addTheme = [this, themeSettings](const std::string &name) {
-		// PPSSPP's original look stays available, under a clearer name.
-		const std::string label = name == "Default" ? std::string("Clásico de PPSSPP") : name;
-		std::string description = name == "Default" ? std::string("El aspecto original de PPSSPP.") : GetThemeDescription(name);
-		ThemeChoice *choice = themeSettings->Add(new ThemeChoice(label, description, GetThemeBackgroundColor(name), GetThemeAccentColor(name), name == g_Config.sThemeName));
-		choice->OnClick.Add([this, name](EventParams &e) {
-			const bool changed = g_Config.sThemeName != name;
-			g_Config.sThemeName = name;
-			UpdateTheme();
-			ApplyThemeSettings();
-			if (changed) {
-				g_Config.fUITint = 0.0f;
-				g_Config.fUISaturation = 1.0f;
-			}
-			RecreateViews();
-		});
+	auto sy = GetI18NCategory(I18NCat::SYSTEM);
+	auto hint = [themeSettings](std::string_view text) {
+		themeSettings->Add(new TextView(text, FLAG_WRAP_TEXT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(12, 2, 12, 8))));
 	};
 
-	// Tryled's own themes first, in a fixed order; then everything else (PPSSPP's and user themes).
-	static const char *const tryledThemes[] = { "Negro total", "Grafito", "Arcade retro", "Cristal" };
-	const std::vector<std::string> allThemes = GetThemeInfoNames();
-	for (const char *name : tryledThemes) {
-		if (std::find(allThemes.begin(), allThemes.end(), name) != allThemes.end())
+	// Sections, as chips (also switchable with L1/R1 on a gamepad).
+	static const char *const sections[] = { "Temas", "Colores", "Letra y forma", "Animaciones", "Sonidos", "Inicio", "Controles táctiles", "Rendimiento" };
+	const int numSections = (int)ARRAY_SIZE(sections);
+	s_personalizeSection = std::clamp(s_personalizeSection, 0, numSections - 1);
+	ScrollView *chipScroll = themeSettings->Add(new ScrollView(ORIENT_HORIZONTAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(6, 0, 6, 6))));
+	LinearLayout *chips = chipScroll->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT)));
+	chips->SetSpacing(6.0f);
+	for (int i = 0; i < numSections; i++) {
+		chips->Add(new TryledChip(sections[i], i == s_personalizeSection))->OnClick.Add([this, i](EventParams &) {
+			s_personalizeSection = i;
+			RecreateViews();
+		});
+	}
+	chipScroll->ScrollTo(std::max(0, s_personalizeSection - 2) * 110.0f);
+
+	static const std::vector<uint32_t> accents = { 0x00E5FF, 0xFF2E88, 0x7C5CFF, 0x3D6DFF, 0x22C55E, 0xFFD23F, 0xFF8A00, 0xEF4444, 0xFFFFFF };
+	static const std::vector<uint32_t> backgrounds = { 0x000000, 0x0B0F1A, 0x101418, 0x1C1C1E, 0x14142B, 0x1A0F1F, 0x0F1A14, 0xE9EEF6, 0xF6F1E7 };
+
+	switch (s_personalizeSection) {
+	case 0: {  // Temas
+		hint("El tema cambia los menús, el fondo, los controles táctiles y el inicio. Cada tema guarda sus propios colores.");
+		auto addTheme = [this, themeSettings](const std::string &name) {
+			const std::string label = name == "Default" ? std::string("Clásico de PPSSPP") : name;
+			std::string description = name == "Default" ? std::string("El aspecto original de PPSSPP.") : GetThemeDescription(name);
+			ThemeChoice *choice = themeSettings->Add(new ThemeChoice(label, description, GetThemeBackgroundColor(name), GetThemeAccentColor(name), name == g_Config.sThemeName));
+			choice->OnClick.Add([this, name](EventParams &e) {
+				const bool changed = g_Config.sThemeName != name;
+				g_Config.sThemeName = name;
+				UpdateTheme();
+				ApplyThemeSettings();
+				if (changed) {
+					g_Config.fUITint = 0.0f;
+					g_Config.fUISaturation = 1.0f;
+				}
+				RecreateViews();
+			});
+		};
+		static const char *const tryledThemes[] = { "Negro total", "Grafito", "Arcade retro", "Cristal" };
+		const std::vector<std::string> allThemes = GetThemeInfoNames();
+		for (const char *name : tryledThemes) {
+			if (std::find(allThemes.begin(), allThemes.end(), name) != allThemes.end())
+				addTheme(name);
+		}
+		themeSettings->Add(new ItemHeader(std::string("Colores principales de «") + g_Config.sThemeName + "»"));
+		AddColorRow(themeSettings, "Fondo", (int)TryledColor::Background, backgrounds, false);
+		AddColorRow(themeSettings, "Acento", (int)TryledColor::Accent, accents, false);
+		themeSettings->Add(new Choice("Volver a los colores originales de este tema"))->OnClick.Add([this](EventParams &) {
+			ResetTryledColors();
+			RecreateViews();
+		});
+		themeSettings->Add(new ItemHeader("Más temas"));
+		if (std::find(allThemes.begin(), allThemes.end(), "Default") != allThemes.end())
+			addTheme("Default");
+		for (const std::string &name : allThemes) {
+			if (name == "Default" || std::find(std::begin(tryledThemes), std::end(tryledThemes), name) != std::end(tryledThemes))
+				continue;
 			addTheme(name);
+		}
+		break;
 	}
-	themeSettings->Add(new ItemHeader("Más temas"));
-	if (std::find(allThemes.begin(), allThemes.end(), "Default") != allThemes.end())
-		addTheme("Default");
-	for (const std::string &name : allThemes) {
-		if (name == "Default" || std::find(std::begin(tryledThemes), std::end(tryledThemes), name) != std::end(tryledThemes))
-			continue;
-		addTheme(name);
+	case 1: {  // Colores
+		hint("Cambia el color de cada parte. «A» usa el color automático del tema y «+» abre el selector libre. Se guarda por tema.");
+		themeSettings->Add(new ItemHeader("Tema"));
+		AddColorRow(themeSettings, "Fondo", (int)TryledColor::Background, backgrounds, false);
+		AddColorRow(themeSettings, "Acento", (int)TryledColor::Accent, accents, false);
+		themeSettings->Add(new ItemHeader("Partes del inicio"));
+		AddColorRow(themeSettings, "Pestaña activa", (int)TryledColor::Tab, accents, true);
+		AddColorRow(themeSettings, "Marco del juego elegido", (int)TryledColor::Selection, accents, true);
+		AddColorRow(themeSettings, "Título del juego", (int)TryledColor::Title, accents, true);
+		AddColorRow(themeSettings, "Textos", (int)TryledColor::Text, accents, true);
+		AddColorRow(themeSettings, "Fondo de las tarjetas", (int)TryledColor::Cards, backgrounds, true);
+		AddColorRow(themeSettings, "Botón Jugar", (int)TryledColor::PlayButton, accents, true);
+		AddColorRow(themeSettings, "Texto del botón Jugar", (int)TryledColor::PlayText, backgrounds, true);
+		AddColorRow(themeSettings, "Brillo y partículas", (int)TryledColor::Glow, accents, true);
+		themeSettings->Add(new Choice("Restablecer todos los colores de este tema"))->OnClick.Add([this](EventParams &) {
+			ResetTryledColors();
+			RecreateViews();
+		});
+		break;
 	}
+	case 2: {  // Letra y forma
+		themeSettings->Add(new ItemHeader("Letra"));
+		PopupSliderChoice *uiScale = themeSettings->Add(new PopupSliderChoice(&g_Config.iUIScaleFactor, -8, 8, 0, "Tamaño de la interfaz", screenManager()));
+		uiScale->SetZeroLabel("Normal");
+		UIContext *ctx = screenManager()->getUIContext();
+		uiScale->OnChange.Add([ctx](UI::EventParams &e) {
+			const float dpiMul = UIScaleFactorToMultiplier(g_Config.iUIScaleFactor);
+			g_display.Recalculate(-1, -1, -1, -1, dpiMul);
+			ctx->InvalidateAtlas();
+			NativeResized();
+		});
+		PopupSliderChoice *title = themeSettings->Add(new PopupSliderChoice(&g_Config.iTryledTitleScale, 70, 130, 100, "Tamaño del título del juego", 5, screenManager(), "%"));
+		title->SetFormat("%i %%");
+		themeSettings->Add(new CheckBox(&g_Config.bTryledUpperTitles, "Títulos en mayúsculas"));
+		themeSettings->Add(new ItemHeader("Forma"));
+		PopupSliderChoice *corners = themeSettings->Add(new PopupSliderChoice(&g_Config.iTryledCornerRadius, 0, 30, 12, "Esquinas redondeadas", screenManager(), "px"));
+		corners->SetFormat("%i px");
+		corners->SetZeroLabel("Rectas");
+		corners->OnChange.Add([](EventParams &) { UpdateTheme(); });
+		PopupSliderChoice *border = themeSettings->Add(new PopupSliderChoice(&g_Config.iTryledBorderWidth, 0, 4, 0, "Grosor del borde", screenManager(), "px"));
+		border->SetFormat("%i px");
+		border->SetZeroLabel("Sin borde");
+		PopupSliderChoice *tile = themeSettings->Add(new PopupSliderChoice(&g_Config.iTryledTileSize, 44, 72, 56, "Tamaño de las miniaturas", 2, screenManager(), "px"));
+		tile->SetFormat("%i px");
+		themeSettings->Add(new CheckBox(&g_Config.bTryledGlow, "Brillo alrededor de lo elegido"));
+		break;
+	}
+	case 3: {  // Animaciones
+		static const char *speeds[] = { "Lenta", "Normal", "Rápida", "Sin animación" };
+		themeSettings->Add(new PopupMultiChoice(&g_Config.iTryledAnimSpeed, "Velocidad", speeds, 0, ARRAY_SIZE(speeds), I18NCat::NONE, screenManager()));
+		static const char *effects[] = { "Crecer", "Brillar", "Flotar" };
+		themeSettings->Add(new PopupMultiChoice(&g_Config.iTryledSelectEffect, "Al elegir un juego", effects, 0, ARRAY_SIZE(effects), I18NCat::NONE, screenManager()));
+		static const char *bgEffects[] = { "Partículas", "Estrellas", "Aurora", "Píxeles", "Ninguno" };
+		themeSettings->Add(new PopupMultiChoice(&g_Config.iTryledBgEffect, "Efecto de fondo", bgEffects, 0, ARRAY_SIZE(bgEffects), I18NCat::NONE, screenManager()));
+		themeSettings->Add(new CheckBox(&g_Config.bTryledDrift, "Fondo en movimiento lento"));
+		static const char *backgroundAnimations[] = { "No animation", "Floating symbols", "Recent games", "Waves", "Moving background", "Bouncing icon", "Colored floating symbols" };
+		themeSettings->Add(new PopupMultiChoice(&g_Config.iBackgroundAnimation, "Animación de fondo de los menús", backgroundAnimations, 0, ARRAY_SIZE(backgroundAnimations), I18NCat::SYSTEM, screenManager()));
+		break;
+	}
+	case 4: {  // Sonidos
+		themeSettings->Add(new CheckBox(&g_Config.bUISound, "Sonidos de la interfaz"));
+		PopupSliderChoice *vol = themeSettings->Add(new PopupSliderChoice(&g_Config.iUIVolume, 0, 100, 70, "Volumen", 5, screenManager(), "%"));
+		vol->SetFormat("%i %%");
+		themeSettings->Add(new CheckBox(&g_Config.bTryledNavSound, "Sonido al moverte entre juegos"));
+		themeSettings->Add(new CheckBox(&g_Config.bTryledStartupSound, "Sonido al abrir Tryled"));
+		themeSettings->Add(new ItemHeader("Paquete de sonidos"));
+		static const char *const packs[][3] = {
+			{ "cristal", "Cristal", "Notas de cristal limpias. El de Tryled." },
+			{ "suave", "Madera suave", "Tonos cálidos tipo marimba." },
+			{ "piano", "Piano", "Notas de piano suaves." },
+			{ "neon", "Neón", "Acordes de sintetizador brillantes." },
+			{ "espacial", "Espacial", "Barridos de sintetizador." },
+			{ "burbuja", "Burbuja", "Pompas cortas y redondas." },
+			{ "retro", "Retro 8 bits", "Pitidos de consola clásica." },
+			{ "clic", "Clic mínimo", "Clics cortos y discretos." },
+		};
+		for (const auto &pack : packs) {
+			const std::string id = pack[0];
+			ThemeChoice *choice = themeSettings->Add(new ThemeChoice(pack[1], pack[2], 0, 0, g_Config.sTryledSoundPack == id));
+			choice->HideSwatches();
+			choice->OnClick.Add([this, id](EventParams &) {
+				g_Config.sTryledSoundPack = id;
+				g_BackgroundAudio.SFX().ReloadSamples();
+				RecreateViews();
+			});
+		}
+		themeSettings->Add(new Choice("Probar los sonidos elegidos", ImageID("I_PLAY")))->OnClick.Add([](EventParams &) {
+			const float volume = Volume100ToMultiplier(g_Config.iUIVolume);
+			g_BackgroundAudio.SFX().Play(UI::UISound::CONFIRM, volume);
+		});
+		break;
+	}
+	case 5: {  // Inicio
+		themeSettings->Add(new CheckBox(&g_Config.bTryledShowClock, "Mostrar la hora"));
+		themeSettings->Add(new CheckBox(&g_Config.bTryledArtCard, "Tarjeta con carátula a la derecha"));
+		themeSettings->Add(new CheckBox(&g_Config.bTryledBottomCards, "Tarjetas de abajo (tiempo jugado, guardados, ajustes)"));
+		break;
+	}
+	case 6: {  // Controles táctiles
+		hint("Mueve, agranda o esconde cada botón y crea botones combinados. La disposición puede ser para todos los juegos o solo para uno (desde los ajustes de ese juego).");
+		themeSettings->Add(new Choice("Editar disposición de los botones", ImageID("I_MOVE")))->OnClick.Add([this](EventParams &) {
+			screenManager()->push(new TouchControlLayoutScreen(gamePath_));
+		});
+		themeSettings->Add(new Choice("Elegir qué botones se ven y botones combinados", ImageID("I_GRID")))->OnClick.Add([this](EventParams &) {
+			screenManager()->push(new TouchControlVisibilityScreen(gamePath_));
+		});
+		static const char *touchControlStyles[] = { "Classic", "Thin borders", "Glowing borders" };
+		themeSettings->Add(new PopupMultiChoice(&g_Config.iTouchButtonStyle, co->T("Button style"), touchControlStyles, 0, ARRAY_SIZE(touchControlStyles), I18NCat::CONTROLS, screenManager()));
+		PopupSliderChoice *opacity = themeSettings->Add(new PopupSliderChoice(&g_Config.iTouchButtonOpacity, 0, 100, 30, co->T("Button Opacity"), screenManager(), "%"));
+		opacity->SetFormat("%i%%");
+		PopupSliderChoice *autoHide = themeSettings->Add(new PopupSliderChoice(&g_Config.iTouchButtonHideSeconds, 0, 300, 20, co->T("Auto-hide buttons after delay"), screenManager(), "s"));
+		autoHide->SetFormat("%d s");
+		autoHide->SetZeroLabel(co->T("Off"));
+		break;
+	}
+	case 7: {  // Rendimiento
+		hint("El inicio deja de dibujarse por completo mientras juegas, así que nada de esto resta rendimiento a los juegos.");
+		themeSettings->Add(new CheckBox(&g_Config.bTryledLite, "Modo ligero en los menús (sin brillos ni efectos de fondo)"));
+		break;
+	}
+	}
+}
 
-	themeSettings->Add(new ItemHeader("Ajustes finos"));
-	themeSettings->Add(new TextView("Estos valores los pone el tema; puedes cambiarlos aquí. Se restablecen al elegir otro tema.", FLAG_WRAP_TEXT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(12, 4, 12, 8))));
-
-	static const char *touchControlStyles[] = { "Classic", "Thin borders", "Glowing borders" };
-	themeSettings->Add(new PopupMultiChoice(&g_Config.iTouchButtonStyle, co->T("Button style"), touchControlStyles, 0, ARRAY_SIZE(touchControlStyles), I18NCat::CONTROLS, screenManager()));
-	PopupSliderChoice *opacity = themeSettings->Add(new PopupSliderChoice(&g_Config.iTouchButtonOpacity, 0, 100, 30, co->T("Button Opacity"), screenManager(), "%"));
-	opacity->SetFormat("%i%%");
-
-	PopupSliderChoice *corners = themeSettings->Add(new PopupSliderChoice(&g_Config.iTryledCornerRadius, 0, 30, 12, "Esquinas redondeadas", screenManager(), "px"));
-	corners->SetFormat("%i px");
-	corners->SetZeroLabel("Rectas");
-	PopupSliderChoice *border = themeSettings->Add(new PopupSliderChoice(&g_Config.iTryledBorderWidth, 0, 4, 0, "Grosor del borde", screenManager(), "px"));
-	border->SetFormat("%i px");
-	border->SetZeroLabel("Sin borde");
-
-	auto sy = GetI18NCategory(I18NCat::SYSTEM);
-	static const char *backgroundAnimations[] = { "No animation", "Floating symbols", "Recent games", "Waves", "Moving background", "Bouncing icon", "Colored floating symbols" };
-	themeSettings->Add(new PopupMultiChoice(&g_Config.iBackgroundAnimation, sy->T("UI background animation"), backgroundAnimations, 0, ARRAY_SIZE(backgroundAnimations), I18NCat::SYSTEM, screenManager()));
+void GameSettingsScreen::CreateGamepadSettings(UI::ViewGroup *parent) {
+	using namespace UI;
+	parent->Add(new TextView("Tu mando de PS5 (u otro) por Bluetooth. Android lo reconoce sin instalar nada: en el móvil ve a Ajustes > Bluetooth y mantén pulsados PS + Create hasta que la luz parpadee.",
+		FLAG_WRAP_TEXT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(12, 2, 12, 8))));
+	parent->Add(new ItemHeader("Botones"));
+	parent->Add(new Choice("Asignar botones del mando", ImageID("I_CONTROLLER")))->OnClick.Add([this](EventParams &) {
+		screenManager()->push(new ControlMappingScreen(gamePath_));
+	});
+	static const char *buttonPref[] = { "Círculo", "Equis" };
+	parent->Add(new PopupMultiChoice(&g_Config.iButtonPreference, "Botón para aceptar en los menús", buttonPref, 0, ARRAY_SIZE(buttonPref), I18NCat::NONE, screenManager()));
+	parent->Add(new ItemHeader("En los menús de Tryled"));
+	static const char *const hints[][2] = {
+		{ "Aceptar / Jugar", "Equis (o Círculo)" }, { "Volver", "Círculo (o Equis)" }, { "Cambiar de consola", "L1 / R1" },
+		{ "Moverse", "Cruceta o joystick" }, { "Ver las tarjetas", "Abajo desde Jugar" }, { "Pausa en partida", "Botón asignado a Pausa" },
+	};
+	for (const auto &h : hints)
+		parent->Add(new InfoItem(h[0], h[1]));
+	parent->Add(new ItemHeader("Comportamiento"));
+	parent->Add(new CheckBox(&g_Config.bShowTouchControls, "Mostrar los controles táctiles en partida"));
+	parent->Add(new CheckBox(&g_Config.bHapticFeedback, "Vibración al tocar los controles táctiles"));
 }
 
 // TODO: Make this generic
