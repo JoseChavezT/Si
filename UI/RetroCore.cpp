@@ -32,6 +32,7 @@ static const RetroCoreInfo g_retroCores[] = {
 	{ "PC Engine", "libbeetle_pce_fast_libretro.so", "Beetle PCE Fast" },
 	{ "Atari 2600", "libstella2014_libretro.so", "Stella" },
 	{ "WonderSwan", "libbeetle_wswan_libretro.so", "Beetle WonderSwan" },
+	{ "Atari 7800", "libprosystem_libretro.so", "ProSystem" },
 };
 
 const RetroCoreInfo *RetroCoreForConsole(const std::string &console) {

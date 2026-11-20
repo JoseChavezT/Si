@@ -93,3 +93,6 @@
 [submodule "ext/tryled-cores/beetle_wswan"]
 	path = ext/tryled-cores/beetle_wswan
 	url = https://github.com/libretro/beetle-wswan-libretro.git
+[submodule "ext/tryled-cores/prosystem"]
+	path = ext/tryled-cores/prosystem
+	url = https://github.com/libretro/prosystem-libretro.git
