@@ -441,7 +441,13 @@ std::string ClockString() {
 
 static const float kTile = 56.0f;      // Unselected game tile (square).
 static const float kTileSel = 84.0f;   // Selected game tile.
-static const float kRadius = 12.0f;    // Corner radius for tiles, cards and the box art.
+// Corner radius and border width for tiles, cards and the box art (Ajustes > Temas / Personalizar).
+static float CornerRadius() { return (float)std::clamp(g_Config.iTryledCornerRadius, 0, 30); }
+static float BorderWidth() { return (float)std::clamp(g_Config.iTryledBorderWidth, 0, 4); }
+static void DrawBorder(UIContext &dc, const Bounds &b, float radius, float alpha) {
+	if (BorderWidth() > 0.0f)
+		TryledDraw::StrokeRoundRect(dc, b, radius, BorderWidth(), colorAlpha(dc.GetTheme().infoStyle.fgColor & 0xFFFFFF, 0.35f * alpha));
+}
 
 // What the home shows about the selected game. Filled by ConsoleRefreshInfo(), read by the views.
 struct ConsoleGameDetails {
@@ -585,13 +591,14 @@ public:
 
 		if (grow_ > 0.01f) {
 			const float pulse = 0.75f + 0.25f * sinf((float)now * 2.6f);
-			TryledDraw::Glow(dc, b.Expand(3.0f), kRadius + 3.0f, 18.0f, WithAlpha(accent, 0.9f * grow_ * pulse * intro));
-			TryledDraw::StrokeRoundRect(dc, b.Expand(5.0f), kRadius + 5.0f, 2.0f, WithAlpha(ThemeFg(dc), grow_ * intro));
+			TryledDraw::Glow(dc, b.Expand(3.0f), CornerRadius() + 3.0f, 18.0f, WithAlpha(accent, 0.9f * grow_ * pulse * intro));
+			TryledDraw::StrokeRoundRect(dc, b.Expand(5.0f), CornerRadius() + 5.0f, 2.0f, WithAlpha(ThemeFg(dc), grow_ * intro));
 		}
 		const float bright = 0.78f + 0.22f * grow_;
-		DrawGameArt(dc, path_, console_, b, kRadius, false, WithAlpha(colorBlend(0xFFFFFF, 0x000000, bright), intro));
+		DrawGameArt(dc, path_, console_, b, CornerRadius(), false, WithAlpha(colorBlend(0xFFFFFF, 0x000000, bright), intro));
 		if (grow_ < 0.99f)
-			TryledDraw::FillRoundRect(dc, b, kRadius, WithAlpha(0x000000, 0.22f * (1.0f - grow_) * intro));
+			TryledDraw::FillRoundRect(dc, b, CornerRadius(), WithAlpha(0x000000, 0.22f * (1.0f - grow_) * intro));
+		DrawBorder(dc, b, CornerRadius(), intro);
 
 		if (showBadge_) {
 			const std::string label = ConsoleShort(console_);
@@ -606,7 +613,7 @@ public:
 			dc.SetFontStyle(dc.GetTheme().uiFont);
 		}
 		if (HasFocus() && !selected)
-			TryledDraw::StrokeRoundRect(dc, b.Expand(3.0f), kRadius + 3.0f, 2.0f, accent);
+			TryledDraw::StrokeRoundRect(dc, b.Expand(3.0f), CornerRadius() + 3.0f, 2.0f, accent);
 	}
 
 private:
@@ -627,12 +634,14 @@ public:
 		: UI::Clickable(new UI::LinearLayoutParams(size, size, 0.0f, UI::Gravity::G_VCENTER)), image_(image), size_(size), panel_(panel), iconScale_(iconScale) {}
 	void Draw(UIContext &dc) override {
 		const uint32_t fg = ThemeFg(dc);
-		if (panel_)
-			TryledDraw::FillRoundRect(dc, bounds_, kRadius, ThemePanel(dc));
+		if (panel_) {
+			TryledDraw::FillRoundRect(dc, bounds_, CornerRadius(), ThemePanel(dc));
+			DrawBorder(dc, bounds_, CornerRadius(), 1.0f);
+		}
 		else if (HasFocus() || down_)
 			TryledDraw::FillRoundRect(dc, bounds_, bounds_.h * 0.5f, WithAlpha(fg, 0.14f));
 		if (HasFocus())
-			TryledDraw::StrokeRoundRect(dc, bounds_.Expand(3.0f), panel_ ? kRadius + 3.0f : bounds_.h * 0.5f + 3.0f, 2.0f, ThemeAccent(dc));
+			TryledDraw::StrokeRoundRect(dc, bounds_.Expand(3.0f), panel_ ? CornerRadius() + 3.0f : bounds_.h * 0.5f + 3.0f, 2.0f, ThemeAccent(dc));
 		dc.Draw()->DrawImage(image_, bounds_.centerX(), bounds_.centerY(), iconScale_ * size_ / 48.0f, WithAlpha(fg, 0.9f), ALIGN_CENTER);
 	}
 private:
@@ -747,10 +756,11 @@ public:
 			return;
 		const float t = EaseOut(float(time_now_d() - std::max(s_consoleSelectTime, s_consoleOpenTime + 0.1)) / 0.4f);
 		Bounds box(bounds_.x, bounds_.y + (1.0f - t) * 12.0f, 150.0f, 150.0f);
-		TryledDraw::Glow(dc, box, kRadius, 16.0f, WithAlpha(0x000000, 0.7f * t));
-		DrawGameArt(dc, s_details.path, s_details.console, box, kRadius, true, WithAlpha(0xFFFFFF, t));
+		TryledDraw::Glow(dc, box, CornerRadius(), 16.0f, WithAlpha(0x000000, 0.7f * t));
+		DrawGameArt(dc, s_details.path, s_details.console, box, CornerRadius(), true, WithAlpha(0xFFFFFF, t));
+		DrawBorder(dc, box, CornerRadius(), t);
 		// Darken the top a bit so the name reads well.
-		TryledDraw::FillRoundRect(dc, Bounds(box.x, box.y, box.w, 44.0f), kRadius, WithAlpha(0x000000, 0.35f * t));
+		TryledDraw::FillRoundRect(dc, Bounds(box.x, box.y, box.w, 44.0f), CornerRadius(), WithAlpha(0x000000, 0.35f * t));
 		dc.SetFontStyle(dc.GetTheme().uiFontSmall);
 		dc.DrawTextRectSqueeze(s_details.title, Bounds(box.x + 10.0f, box.y + 6.0f, box.w - 20.0f, 30.0f), WithAlpha(0xFFFFFF, t), ALIGN_LEFT | ALIGN_VCENTER);
 
@@ -789,8 +799,8 @@ public:
 	void Draw(UIContext &dc) override {
 		const uint32_t fg = ThemeFg(dc);
 		const uint32_t accent = ThemeAccent(dc);
-		TryledDraw::FillRoundRect(dc, bounds_, kRadius, WithAlpha(ThemePanel(dc), 0.9f));
-		TryledDraw::StrokeRoundRect(dc, bounds_, kRadius, 1.0f, WithAlpha(fg, 0.1f));
+		TryledDraw::FillRoundRect(dc, bounds_, CornerRadius(), WithAlpha(ThemePanel(dc), 0.9f));
+		TryledDraw::StrokeRoundRect(dc, bounds_, CornerRadius(), std::max(1.0f, BorderWidth()), WithAlpha(fg, BorderWidth() > 0.0f ? 0.35f : 0.1f));
 		static const char *const titles[3] = { "Tiempo jugado", "Partidas guardadas", "Ajustes del juego" };
 		const float x = bounds_.x + 14.0f;
 		float y = bounds_.y + 12.0f;

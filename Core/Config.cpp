@@ -1138,6 +1138,8 @@ static const ConfigSetting upgradeSettings[] = {
 static const ConfigSetting themeSettings[] = {
 	ConfigSetting("ThemeName", SETTING(g_Config, sThemeName), "Negro total", CfgFlag::DEFAULT),
 	ConfigSetting("TryledGamesFolder", SETTING(g_Config, sTryledGamesFolder), "", CfgFlag::DEFAULT),
+	ConfigSetting("TryledCornerRadius", SETTING(g_Config, iTryledCornerRadius), 12, CfgFlag::DEFAULT),
+	ConfigSetting("TryledBorderWidth", SETTING(g_Config, iTryledBorderWidth), 0, CfgFlag::DEFAULT),
 };
 
 static const ConfigSetting vrSettings[] = {

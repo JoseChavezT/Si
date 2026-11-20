@@ -434,6 +434,8 @@ public:
 
 	std::string sThemeName;
 	std::string sTryledGamesFolder;  // Tryled: folder scanned for the console home.
+	int iTryledCornerRadius;  // Tryled: rounded corners of tiles, cards and buttons, in UI pixels.
+	int iTryledBorderWidth;   // Tryled: border around tiles and cards (0 = none).
 
 	// These aren't saved, just for instant debugging.
 	bool bLogFrameDrops;

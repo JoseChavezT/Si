@@ -402,6 +402,13 @@ void GameSettingsScreen::CreateThemeSettings(UI::ViewGroup *themeSettings) {
 	PopupSliderChoice *opacity = themeSettings->Add(new PopupSliderChoice(&g_Config.iTouchButtonOpacity, 0, 100, 30, co->T("Button Opacity"), screenManager(), "%"));
 	opacity->SetFormat("%i%%");
 
+	PopupSliderChoice *corners = themeSettings->Add(new PopupSliderChoice(&g_Config.iTryledCornerRadius, 0, 30, 12, "Esquinas redondeadas", screenManager(), "px"));
+	corners->SetFormat("%i px");
+	corners->SetZeroLabel("Rectas");
+	PopupSliderChoice *border = themeSettings->Add(new PopupSliderChoice(&g_Config.iTryledBorderWidth, 0, 4, 0, "Grosor del borde", screenManager(), "px"));
+	border->SetFormat("%i px");
+	border->SetZeroLabel("Sin borde");
+
 	auto sy = GetI18NCategory(I18NCat::SYSTEM);
 	static const char *backgroundAnimations[] = { "No animation", "Floating symbols", "Recent games", "Waves", "Moving background", "Bouncing icon", "Colored floating symbols" };
 	themeSettings->Add(new PopupMultiChoice(&g_Config.iBackgroundAnimation, sy->T("UI background animation"), backgroundAnimations, 0, ARRAY_SIZE(backgroundAnimations), I18NCat::SYSTEM, screenManager()));
