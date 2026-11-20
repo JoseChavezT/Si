@@ -6,6 +6,7 @@
 #include "Common/UI/Context.h"
 #include "Common/UI/PopupScreens.h"
 #include "Common/UI/ViewGroup.h"
+#include "Common/UI/Root.h"
 #include "Common/System/Display.h"
 #include "Common/System/OSD.h"
 #include "Common/TimeUtil.h"
@@ -51,8 +52,13 @@ void RetroScreen::CreateViews() {
 
 void RetroScreen::update() {
 	UIScreen::update();
-	if (!loaded_) {
-		screenManager()->finishDialog(this, DR_CANCEL);
+	if (!loaded_ || exitRequested_) {
+		if (!closing_ && screenManager()->topScreen() == this) {
+			closing_ = true;
+			core_.Unload();
+			loaded_ = false;
+			screenManager()->finishDialog(this, exitRequested_ ? DR_OK : DR_CANCEL);
+		}
 		return;
 	}
 	if (pauseTrigger_) {
@@ -123,6 +129,7 @@ void RetroScreen::OnVKey(VirtKey vkey, bool down) {
 		return;
 	switch (vkey) {
 	case VIRTKEY_PAUSE:
+		pauseFromButton_ = true;
 		pauseTrigger_ = true;
 		break;
 	case VIRTKEY_SAVE_STATE:
@@ -136,20 +143,18 @@ void RetroScreen::OnVKey(VirtKey vkey, bool down) {
 	}
 }
 
-bool RetroScreen::key(const KeyInput &key) {
+bool RetroScreen::UnsyncKey(const KeyInput &key) {
+	// Called from the input thread: only set flags here, update() acts on them.
 	if ((key.flags & KeyInputFlags::DOWN) && UI::IsEscapeKey(key)) {
-		OpenPauseMenu();
+		pauseFromButton_ = true;
+		pauseTrigger_ = true;
 		return true;
 	}
-	bool pause = false;
-	const bool handled = g_controlMapper.Key(key, &pause);
-	if (pause)
-		pauseTrigger_ = true;
-	return handled || UIScreen::key(key);
+	return g_controlMapper.Key(key, &pauseTrigger_);
 }
 
-void RetroScreen::axis(const AxisInput &axis) {
-	g_controlMapper.Axis(&axis, 1);
+void RetroScreen::UnsyncAxis(const AxisInput *axes, size_t count) {
+	g_controlMapper.Axis(axes, count);
 }
 
 void RetroScreen::OpenPauseMenu() {
@@ -157,6 +162,9 @@ void RetroScreen::OpenPauseMenu() {
 		return;
 	paused_ = true;
 	core_.SaveSRAM();
+	// With a gamepad or keyboard, every press should move through the menu right away.
+	UI::EnableFocusMovement(pauseFromButton_);
+	pauseFromButton_ = false;
 	std::vector<std::string> items = { "Continuar", "Guardar estado", "Cargar estado", "Reiniciar", "Salir al inicio" };
 	auto *menu = new UI::ListPopupScreen(game_.WithReplacedExtension("").GetFilename(), items, 0, [this](int choice) {
 		paused_ = false;
@@ -172,8 +180,8 @@ void RetroScreen::OpenPauseMenu() {
 			core_.Reset();
 			break;
 		case 4:
-			core_.Unload();
-			screenManager()->finishDialog(this, DR_OK);
+			// The menu is still on top of us here; close this screen from update() once it's gone.
+			exitRequested_ = true;
 			break;
 		default:
 			break;

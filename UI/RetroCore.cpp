@@ -33,6 +33,7 @@ static const RetroCoreInfo g_retroCores[] = {
 	{ "Atari 2600", "libstella2014_libretro.so", "Stella" },
 	{ "WonderSwan", "libbeetle_wswan_libretro.so", "Beetle WonderSwan" },
 	{ "Atari 7800", "libprosystem_libretro.so", "ProSystem" },
+	{ "DOS", "libdosbox_pure_libretro.so", "DOSBox Pure" },
 };
 
 const RetroCoreInfo *RetroCoreForConsole(const std::string &console) {

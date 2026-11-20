@@ -589,10 +589,20 @@ std::string ClockString() {
 // console using the file extension. Only PSP games can be played for now.
 // ---------------------------------------------------------------------------
 
-static const char *const g_tryledConsoleOrder[] = { "PSP", "PS1", "GBA", "GB", "SNES", "NES", "Mega Drive", "Master System", "Game Gear", "PC Engine", "Atari 2600", "Atari 7800", "WonderSwan" };
+static const char *const g_tryledConsoleOrder[] = { "PSP", "PS1", "GBA", "GB", "SNES", "NES", "Mega Drive", "Master System", "Game Gear", "PC Engine", "Atari 2600", "Atari 7800", "WonderSwan", "DOS" };
 
 static std::string TryledConsoleOf(const Path &path) {
 	std::string ext = path.GetFileExtension();  // Lowercase, with the dot.
+	// DOS games: .dosz anywhere, and programs/archives inside a folder called "DOS".
+	if (ext == ".dosz")
+		return "DOS";
+	if (ext == ".exe" || ext == ".com" || ext == ".bat" || ext == ".zip") {
+		std::string lower = path.ToString();
+		for (auto &c : lower)
+			c = (char)tolower((unsigned char)c);
+		if (lower.find("/dos/") != std::string::npos || lower.find("%2fdos%2f") != std::string::npos)
+			return "DOS";
+	}
 	if (ext == ".iso" || ext == ".cso" || ext == ".chd" || ext == ".pbp" || ext == ".elf" || ext == ".prx")
 		return "PSP";
 	if (ext == ".cue" || ext == ".m3u" || ext == ".ecm" || ext == ".img" || ext == ".mdf" || ext == ".toc" || ext == ".cbn" || ext == ".exe")

@@ -96,3 +96,6 @@
 [submodule "ext/tryled-cores/prosystem"]
 	path = ext/tryled-cores/prosystem
 	url = https://github.com/libretro/prosystem-libretro.git
+[submodule "ext/tryled-cores/dosbox_pure"]
+	path = ext/tryled-cores/dosbox_pure
+	url = https://github.com/libretro/dosbox-pure.git

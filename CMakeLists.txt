@@ -2945,6 +2945,7 @@ if(ANDROID)
 	tryled_ndk_core(stella2014 stella2014/jni libretro.so)
 	tryled_ndk_core(beetle_wswan beetle_wswan/jni libretro.so)
 	tryled_ndk_core(prosystem prosystem/jni libretro.so)
+	tryled_ndk_core(dosbox_pure dosbox_pure/jni libretro.so)
 endif()
 
 list(APPEND LinkCommon ${CoreLibName} ${CMAKE_THREAD_LIBS_INIT})

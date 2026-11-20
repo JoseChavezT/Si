@@ -22,8 +22,10 @@ public:
 	const char *tag() const override { return "Retro"; }
 
 	void update() override;
-	bool key(const KeyInput &key) override;
-	void axis(const AxisInput &axis) override;
+	// Game input goes straight to the control mapper, like in EmuScreen (otherwise the UI
+	// would swallow the first key press to turn on menu navigation).
+	bool UnsyncKey(const KeyInput &key) override;
+	void UnsyncAxis(const AxisInput *axes, size_t count) override;
 	void dialogFinished(const Screen *dialog, DialogResult result) override;
 
 	// ControlListener
@@ -49,6 +51,9 @@ private:
 	double nextFrameTime_ = 0.0;
 	bool paused_ = false;
 	bool pauseTrigger_ = false;
+	bool pauseFromButton_ = false;  // Opened with keyboard/gamepad: start with button navigation on.
+	bool exitRequested_ = false;
+	bool closing_ = false;  // Set from the pause menu; acted on once the menu has closed.
 
 	uint32_t pspButtons_ = 0;
 	float stickX_ = 0.0f, stickY_ = 0.0f;
