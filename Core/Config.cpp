@@ -1137,6 +1137,7 @@ static const ConfigSetting upgradeSettings[] = {
 
 static const ConfigSetting themeSettings[] = {
 	ConfigSetting("ThemeName", SETTING(g_Config, sThemeName), "Negro total", CfgFlag::DEFAULT),
+	ConfigSetting("TryledGamesFolder", SETTING(g_Config, sTryledGamesFolder), "", CfgFlag::DEFAULT),
 };
 
 static const ConfigSetting vrSettings[] = {

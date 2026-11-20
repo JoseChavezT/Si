@@ -67,7 +67,12 @@ protected:
 	void ConsoleRefreshInfo();
 	void ConsoleLaunchSelected();
 	bool ConsoleMode() const;
+	void ConsoleSetTab(int tab);
+	void ConsoleChooseFolder();
 	std::vector<Path> consoleGames_;
+	std::vector<std::string> consoleKinds_;  // Console of each game in consoleGames_ ("PSP", "GBA"...).
+	std::vector<std::string> consoleTabs_;   // "Todos" + the consoles found.
+	int consoleScanGen_ = -1;
 	UI::TextView *consoleSmallName_ = nullptr;
 	UI::TextView *consoleTitle_ = nullptr;
 	UI::TextView *consoleSub_ = nullptr;

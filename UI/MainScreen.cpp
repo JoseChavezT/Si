@@ -60,6 +60,10 @@
 #include "Core/SaveState.h"
 #include "Common/Data/Color/RGBAUtil.h"
 #include "Common/TimeUtil.h"
+#include "Common/Thread/ThreadManager.h"
+#include "Common/File/DirListing.h"
+#include <mutex>
+#include <atomic>
 #include <ctime>
 
 bool MainScreen::showHomebrewTab = false;
@@ -318,6 +322,10 @@ static double s_consoleArtTime = 0.0;     // When the background art changed: cr
 static Path s_consolePrevArt;             // Art fading out.
 static bool s_startupSoundPlayed = false;
 
+// Everything the console home needs about a game, always requested together (requesting it piecemeal
+// sometimes left the icon or the artwork unloaded for the first game).
+static const GameInfoFlags kConsoleInfoFlags = GameInfoFlags::PARAM_SFO | GameInfoFlags::ICON | GameInfoFlags::PIC1;
+
 namespace {
 
 float EaseOut(float t) {
@@ -336,8 +344,8 @@ uint32_t ThemeAccentText(const UIContext &dc) {
 // One game in the top row. Draws the game's icon; the selected one gets an accent frame.
 class ConsoleGameTile : public UI::Clickable {
 public:
-	ConsoleGameTile(const Path &path, int index, std::function<bool(int)> isSelected, std::function<void(int)> onFocus, UI::LayoutParams *layoutParams)
-		: UI::Clickable(layoutParams), path_(path), index_(index), isSelected_(isSelected), onFocus_(onFocus) {}
+	ConsoleGameTile(const Path &path, const std::string &console, int index, std::function<bool(int)> isSelected, std::function<void(int)> onFocus, UI::LayoutParams *layoutParams)
+		: UI::Clickable(layoutParams), path_(path), console_(console), index_(index), isSelected_(isSelected), onFocus_(onFocus) {}
 
 	void GetContentDimensions(const UIContext &dc, float &w, float &h) const override {
 		w = 144.0f;
@@ -376,8 +384,11 @@ public:
 		}
 		dc.FillRect(UI::Drawable(colorAlpha(dc.GetTheme().itemStyle.background.color & 0xFFFFFF, alpha)), b);
 
-		std::shared_ptr<GameInfo> ginfo = g_gameInfoCache->GetInfo(dc.GetDrawContext(), path_, GameInfoFlags::ICON | GameInfoFlags::PARAM_SFO);
-		Draw::Texture *texture = (ginfo->Ready(GameInfoFlags::ICON) && ginfo->icon.texture) ? ginfo->icon.texture : nullptr;
+		// Only PSP games go through the game info cache (it knows nothing about other consoles' files).
+		std::shared_ptr<GameInfo> ginfo;
+		if (console_ == "PSP")
+			ginfo = g_gameInfoCache->GetInfo(dc.GetDrawContext(), path_, kConsoleInfoFlags);
+		Draw::Texture *texture = (ginfo && ginfo->Ready(GameInfoFlags::ICON) && ginfo->icon.texture) ? ginfo->icon.texture : nullptr;
 		if (texture) {
 			const float bright = 0.68f + 0.32f * grow_;
 			uint32_t color = colorAlpha(colorBlend(0xFFFFFF, 0x000000, bright) & 0xFFFFFF, alpha);
@@ -388,7 +399,7 @@ public:
 			dc.RebindTexture();
 		} else {
 			// No icon (homebrew, still loading...): show the initials of the title.
-			std::string title = ginfo->Ready(GameInfoFlags::PARAM_SFO) ? ginfo->GetTitle() : path_.GetFilename();
+			std::string title = (ginfo && ginfo->Ready(GameInfoFlags::PARAM_SFO)) ? ginfo->GetTitle() : path_.WithReplacedExtension("").GetFilename();
 			std::string initials;
 			bool newWord = true;
 			for (char c : title) {
@@ -405,6 +416,15 @@ public:
 			dc.DrawText(initials, b.centerX(), b.centerY(), dc.GetTheme().itemStyle.fgColor, ALIGN_CENTER);
 			dc.SetFontStyle(dc.GetTheme().uiFont);
 		}
+		if (console_ != "PSP") {
+			// Console badge in the corner, so non-PSP games are easy to tell apart.
+			dc.SetFontStyle(dc.GetTheme().uiFontTiny);
+			float tw, th;
+			dc.MeasureText(dc.GetTheme().uiFontTiny, 1.0f, 1.0f, console_, &tw, &th);
+			dc.FillRect(UI::Drawable(colorAlpha(0x000000, 0.65f * alpha)), Bounds(b.x + 4, b.y2() - th - 6, tw + 8, th + 2));
+			dc.DrawText(console_, b.x + 8, b.y2() - th - 5, colorAlpha(0xFFFFFF, alpha), ALIGN_TOPLEFT);
+			dc.SetFontStyle(dc.GetTheme().uiFont);
+		}
 		if (HasFocus() && !selected) {
 			dc.Draw()->RectOutline(b.x, b.y, b.w, b.h, accent);
 		}
@@ -412,6 +432,7 @@ public:
 
 private:
 	Path path_;
+	std::string console_;
 	int index_;
 	std::function<bool(int)> isSelected_;
 	std::function<void(int)> onFocus_;
@@ -560,6 +581,140 @@ std::string ClockString() {
 
 }  // namespace
 
+
+// ---------------------------------------------------------------------------
+// Tryled: game folder scanning. The user picks one folder; we look through it
+// (and subfolders, a few levels deep) on a worker thread and sort the games by
+// console using the file extension. Only PSP games can be played for now.
+// ---------------------------------------------------------------------------
+
+static const char *const g_tryledConsoleOrder[] = { "PSP", "PS1", "GBA", "GB", "SNES", "NES", "Mega Drive" };
+
+static std::string TryledConsoleOf(const Path &path) {
+	std::string ext = path.GetFileExtension();  // Lowercase, with the dot.
+	if (ext == ".iso" || ext == ".cso" || ext == ".chd" || ext == ".pbp" || ext == ".elf" || ext == ".prx")
+		return "PSP";
+	if (ext == ".cue" || ext == ".m3u" || ext == ".ecm")
+		return "PS1";
+	if (ext == ".gba")
+		return "GBA";
+	if (ext == ".gb" || ext == ".gbc")
+		return "GB";
+	if (ext == ".sfc" || ext == ".smc")
+		return "SNES";
+	if (ext == ".nes")
+		return "NES";
+	if (ext == ".md" || ext == ".gen" || ext == ".smd")
+		return "Mega Drive";
+	return "";
+}
+
+struct TryledScanResult {
+	std::string folder;
+	std::vector<std::pair<Path, std::string>> games;  // path, console
+};
+
+static std::mutex g_tryledScanLock;
+static TryledScanResult g_tryledScan;
+static std::atomic<bool> g_tryledScanning{ false };
+static std::atomic<int> g_tryledScanGen{ 0 };
+
+static void TryledScanDir(const Path &dir, int depth, std::vector<std::pair<Path, std::string>> *out) {
+	std::vector<File::FileInfo> files;
+	File::GetFilesInDir(dir, &files);
+	for (const auto &f : files) {
+		if (f.isDirectory) {
+			// Skip hidden and system-ish folders.
+			if (depth < 4 && !f.name.empty() && f.name[0] != '.' && f.name != "PSP" && f.name != "Android")
+				TryledScanDir(f.fullName, depth + 1, out);
+			continue;
+		}
+		std::string console = TryledConsoleOf(f.fullName);
+		if (console.empty())
+			continue;
+		// For EBOOT.PBP inside a game folder, only take the PBP itself (not .elf/.prx helpers).
+		std::string ext = f.fullName.GetFileExtension();
+		if ((ext == ".elf" || ext == ".prx"))
+			continue;
+		out->push_back({ f.fullName, console });
+	}
+}
+
+class TryledScanTask : public Task {
+public:
+	explicit TryledScanTask(const std::string &folder) : folder_(folder) {}
+	TaskType Type() const override { return TaskType::IO_BLOCKING; }
+	TaskPriority Priority() const override { return TaskPriority::NORMAL; }
+	void Run() override {
+		std::vector<std::pair<Path, std::string>> games;
+		TryledScanDir(Path(folder_), 0, &games);
+		std::sort(games.begin(), games.end(), [](const auto &a, const auto &b) {
+			return a.first.GetFilename() < b.first.GetFilename();
+		});
+		{
+			std::lock_guard<std::mutex> guard(g_tryledScanLock);
+			g_tryledScan.folder = folder_;
+			g_tryledScan.games = std::move(games);
+		}
+		g_tryledScanning = false;
+		g_tryledScanGen++;
+	}
+private:
+	std::string folder_;
+};
+
+static void TryledStartScan(const std::string &folder) {
+	if (folder.empty() || g_tryledScanning.exchange(true))
+		return;
+	g_threadManager.EnqueueTask(new TryledScanTask(folder));
+}
+
+static int s_tryledTab = 0;
+
+
+namespace {
+
+// One console tab in the top bar ("Todos", "PSP", "GBA"...). The current one is underlined in the accent color.
+class ConsoleTab : public UI::Choice {
+public:
+	ConsoleTab(std::string_view text, bool selected, UI::LayoutParams *layoutParams) : UI::Choice(text, layoutParams), selected_(selected) {}
+	void GetContentDimensionsBySpec(const UIContext &dc, UI::MeasureSpec horiz, UI::MeasureSpec vert, float &w, float &h) const override {
+		float tw, th;
+		dc.MeasureText(dc.GetTheme().uiFont, 1.0f, 1.0f, text_, &tw, &th);
+		w = tw + 24.0f;
+		h = 48.0f;
+	}
+	void Draw(UIContext &dc) override {
+		const uint32_t accent = ThemeAccent(dc);
+		uint32_t fg = dc.GetTheme().infoStyle.fgColor;
+		if (!selected_)
+			fg = colorAlpha(fg & 0xFFFFFF, 0.5f);
+		if (HasFocus())
+			dc.FillRect(UI::Drawable(colorAlpha(fg & 0xFFFFFF, 0.12f)), bounds_);
+		dc.SetFontStyle(dc.GetTheme().uiFont);
+		dc.DrawText(text_, bounds_.centerX(), bounds_.centerY(), fg, ALIGN_CENTER);
+		if (selected_)
+			dc.FillRect(UI::Drawable(accent), Bounds(bounds_.x + 12.0f, bounds_.y2() - 6.0f, bounds_.w - 24.0f, 3.0f));
+	}
+private:
+	bool selected_;
+};
+
+// Small "L1" / "R1" hint next to the tabs.
+class ShoulderHint : public UI::TextView {
+public:
+	ShoulderHint(std::string_view text, UI::LayoutParams *lp) : UI::TextView(text, ALIGN_CENTER, true, lp) {}
+	void Draw(UIContext &dc) override {
+		const uint32_t fg = colorAlpha(dc.GetTheme().infoStyle.fgColor & 0xFFFFFF, 0.55f);
+		dc.FillRect(UI::Drawable(colorAlpha(dc.GetTheme().infoStyle.fgColor & 0xFFFFFF, 0.14f)), Bounds(bounds_.x + 2, bounds_.y + 12, bounds_.w - 4, bounds_.h - 24));
+		dc.SetFontStyle(dc.GetTheme().uiFontTiny);
+		dc.DrawText(GetText(), bounds_.centerX(), bounds_.centerY(), fg, ALIGN_CENTER);
+		dc.SetFontStyle(dc.GetTheme().uiFont);
+	}
+};
+
+}  // namespace
+
 bool MainScreen::ConsoleMode() const {
 	return !s_tryledLibraryMode;
 }
@@ -567,9 +722,57 @@ bool MainScreen::ConsoleMode() const {
 void MainScreen::CreateConsoleViews() {
 	using namespace UI;
 
-	consoleGames_.clear();
+	// Games: recently played first, then everything found in the chosen folder.
+	if (!g_Config.sTryledGamesFolder.empty()) {
+		bool needScan;
+		{
+			std::lock_guard<std::mutex> guard(g_tryledScanLock);
+			needScan = g_tryledScan.folder != g_Config.sTryledGamesFolder;
+		}
+		if (needScan)
+			TryledStartScan(g_Config.sTryledGamesFolder);
+	}
+	consoleScanGen_ = g_tryledScanGen;
+
+	std::vector<std::pair<Path, std::string>> all;
 	for (const std::string &file : g_recentFiles.GetRecentFiles()) {
-		consoleGames_.push_back(Path(file));
+		all.push_back({ Path(file), "PSP" });
+	}
+	{
+		std::lock_guard<std::mutex> guard(g_tryledScanLock);
+		for (const auto &g : g_tryledScan.games) {
+			bool dup = false;
+			for (const auto &a : all) {
+				if (a.first == g.first) {
+					dup = true;
+					break;
+				}
+			}
+			if (!dup)
+				all.push_back(g);
+		}
+	}
+
+	consoleTabs_.clear();
+	consoleTabs_.push_back("Todos");
+	for (const char *c : g_tryledConsoleOrder) {
+		for (const auto &g : all) {
+			if (g.second == c) {
+				consoleTabs_.push_back(c);
+				break;
+			}
+		}
+	}
+	if (s_tryledTab >= (int)consoleTabs_.size())
+		s_tryledTab = 0;
+
+	consoleGames_.clear();
+	consoleKinds_.clear();
+	for (const auto &g : all) {
+		if (s_tryledTab == 0 || g.second == consoleTabs_[s_tryledTab]) {
+			consoleGames_.push_back(g.first);
+			consoleKinds_.push_back(g.second);
+		}
 	}
 	if (s_tryledSelected >= (int)consoleGames_.size())
 		s_tryledSelected = 0;
@@ -579,19 +782,23 @@ void MainScreen::CreateConsoleViews() {
 	rootLayout->SetSpacing(0.0f);
 	root_ = rootLayout;
 
-	// Top bar: section names on the left, settings and clock on the right.
-	LinearLayout *topBar = rootLayout->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(24, 12, 24, 0))));
-	topBar->SetSpacing(12.0f);
-	TextView *gamesLabel = topBar->Add(new TextView("Juegos", new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, 0.0f, Gravity::G_VCENTER)));
-	gamesLabel->SetBig(true);
-	Choice *libraryTab = topBar->Add(new Choice("Biblioteca", new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, 0.0f, Gravity::G_VCENTER)));
-	libraryTab->OnClick.Add([this](EventParams &) {
-		s_tryledLibraryMode = true;
-		RecreateViews();
-	});
+	// Top bar: console tabs (L1/R1) on the left; folder, settings and clock on the right.
+	LinearLayout *topBar = rootLayout->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(18, 8, 24, 0))));
+	topBar->SetSpacing(4.0f);
+	if (consoleTabs_.size() > 1)
+		topBar->Add(new ShoulderHint("L1", new LinearLayoutParams(34.0f, 48.0f, 0.0f, Gravity::G_VCENTER)));
+	for (int t = 0; t < (int)consoleTabs_.size(); t++) {
+		ConsoleTab *tabView = topBar->Add(new ConsoleTab(consoleTabs_[t], t == s_tryledTab, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, 0.0f, Gravity::G_VCENTER)));
+		tabView->OnClick.Add([this, t](EventParams &) { ConsoleSetTab(t); });
+	}
+	if (consoleTabs_.size() > 1)
+		topBar->Add(new ShoulderHint("R1", new LinearLayoutParams(34.0f, 48.0f, 0.0f, Gravity::G_VCENTER)));
 	topBar->Add(new Spacer(new LinearLayoutParams(1.0f)));
-	if (System_GetPropertyBool(SYSPROP_HAS_FILE_BROWSER)) {
-		topBar->Add(new Choice(ImageID("I_FOLDER_OPEN"), new LinearLayoutParams(ITEM_HEIGHT, ITEM_HEIGHT)))->OnClick.Handle(this, &MainScreen::OnLoadFile);
+	if (g_tryledScanning) {
+		topBar->Add(new TextView("Buscando juegos…", ALIGN_RIGHT, true, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, 0.0f, Gravity::G_VCENTER)));
+	}
+	if (System_GetPropertyBool(SYSPROP_HAS_FOLDER_BROWSER)) {
+		topBar->Add(new Choice(ImageID("I_FOLDER_OPEN"), new LinearLayoutParams(ITEM_HEIGHT, ITEM_HEIGHT)))->OnClick.Add([this](EventParams &) { ConsoleChooseFolder(); });
 	}
 	topBar->Add(new Choice(ImageID("I_GEAR"), new LinearLayoutParams(ITEM_HEIGHT, ITEM_HEIGHT)))->OnClick.Handle(this, &MainScreen::OnGameSettings);
 	consoleClock_ = topBar->Add(new TextView(ClockString(), new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, 0.0f, Gravity::G_VCENTER)));
@@ -603,7 +810,7 @@ void MainScreen::CreateConsoleViews() {
 	row->Add(new Spacer(14.0f));
 	View *firstTile = nullptr;
 	for (int i = 0; i < (int)consoleGames_.size(); i++) {
-		ConsoleGameTile *tile = row->Add(new ConsoleGameTile(consoleGames_[i], i,
+		ConsoleGameTile *tile = row->Add(new ConsoleGameTile(consoleGames_[i], consoleKinds_[i], i,
 			[](int index) { return index == s_tryledSelected; },
 			[this](int index) { ConsoleSelect(index); },
 			new LinearLayoutParams(144.0f, 80.0f, 0.0f, Gravity::G_VCENTER)));
@@ -635,17 +842,14 @@ void MainScreen::CreateConsoleViews() {
 	buttons->SetSpacing(12.0f);
 	ConsoleButton *playButton;
 	if (consoleGames_.empty()) {
-		playButton = buttons->Add(new ConsoleButton("Abrir Biblioteca", ImageID("I_GRID"), true, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT)));
-		playButton->OnClick.Add([this](EventParams &) {
-			s_tryledLibraryMode = true;
-			RecreateViews();
-		});
+		playButton = buttons->Add(new ConsoleButton("Elegir carpeta de juegos", ImageID("I_FOLDER_OPEN"), true, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT)));
+		playButton->OnClick.Add([this](EventParams &) { ConsoleChooseFolder(); });
 	} else {
 		playButton = buttons->Add(new ConsoleButton("Jugar", ImageID("I_PLAY"), true, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT)));
 		playButton->OnClick.Add([this](EventParams &) { ConsoleLaunchSelected(); });
 		ConsoleButton *more = buttons->Add(new ConsoleButton("", ImageID("I_THREE_DOTS"), false, new LinearLayoutParams(64.0f, 56.0f)));
 		more->OnClick.Add([this](EventParams &) {
-			if (s_tryledSelected < (int)consoleGames_.size()) {
+			if (s_tryledSelected < (int)consoleGames_.size() && consoleKinds_[s_tryledSelected] == "PSP") {
 				screenManager()->push(new GameScreen(consoleGames_[s_tryledSelected], false));
 			}
 		});
@@ -678,7 +882,8 @@ void MainScreen::ConsoleSelect(int index) {
 		s_consoleArtTime = time_now_d();
 		s_consoleSelectTime = s_consoleArtTime;
 		s_tryledSelected = index;
-		g_BackgroundAudio.SetGame(consoleGames_[index]);
+		if (consoleKinds_[index] == "PSP")
+			g_BackgroundAudio.SetGame(consoleGames_[index]);
 	}
 	ConsoleRefreshInfo();
 }
@@ -687,9 +892,37 @@ void MainScreen::ConsoleLaunchSelected() {
 	if (s_tryledSelected >= (int)consoleGames_.size())
 		return;
 	Path path = consoleGames_[s_tryledSelected];
+	const std::string &console = consoleKinds_[s_tryledSelected];
+	if (console != "PSP") {
+		g_OSD.Show(OSDType::MESSAGE_INFO, "El emulador de " + console + " aún no está en Tryled. Por ahora solo se pueden jugar juegos de PSP.", 4.0f, "tryled-noemu");
+		return;
+	}
 	// After playing, this game moves to the front of the recent list.
 	s_tryledSelected = 0;
+	s_tryledTab = 0;
 	LaunchFile(screenManager(), this, path);
+}
+
+void MainScreen::ConsoleSetTab(int tab) {
+	if (consoleTabs_.empty())
+		return;
+	tab = (tab + (int)consoleTabs_.size()) % (int)consoleTabs_.size();
+	if (tab == s_tryledTab)
+		return;
+	s_tryledTab = tab;
+	s_tryledSelected = 0;
+	s_consoleSelectTime = time_now_d();
+	UI::PlayUISound(UI::UISound::TOGGLE_ON);
+	RecreateViews();
+}
+
+void MainScreen::ConsoleChooseFolder() {
+	System_BrowseForFolder(GetRequesterToken(), "Carpeta de juegos", Path(g_Config.sTryledGamesFolder), [](const std::string &value, int) {
+		g_Config.sTryledGamesFolder = value;
+		g_Config.Save("TryledGamesFolder");
+		TryledStartScan(value);
+		System_PostUIMessage(UIMessage::RECENT_FILES_CHANGED);
+	});
 }
 
 void MainScreen::ConsoleRefreshInfo() {
@@ -701,15 +934,28 @@ void MainScreen::ConsoleRefreshInfo() {
 
 	if (consoleGames_.empty()) {
 		consoleSmallName_->SetText("Tryled");
-		consoleTitle_->SetText("Tu colección está vacía");
-		consoleSub_->SetText("Abre la Biblioteca y elige la carpeta donde guardas tus juegos. Los que juegues aparecerán aquí.");
+		if (g_tryledScanning) {
+			consoleTitle_->SetText("Buscando juegos…");
+			consoleSub_->SetText("Revisando tu carpeta. Tus juegos aparecerán aquí, ordenados por consola.");
+		} else {
+			consoleTitle_->SetText("Tu colección está vacía");
+			consoleSub_->SetText(g_Config.sTryledGamesFolder.empty() ? "Elige la carpeta donde guardas tus juegos y Tryled los ordenará por consola." : "No encontré juegos en esa carpeta. Prueba con otra.");
+		}
 		for (auto *card : consoleCardValue_)
 			card->SetText("—");
 		return;
 	}
 
 	const Path &path = consoleGames_[s_tryledSelected];
-	std::shared_ptr<GameInfo> ginfo = g_gameInfoCache->GetInfo(nullptr, path, GameInfoFlags::PARAM_SFO);
+	if (consoleKinds_[s_tryledSelected] != "PSP") {
+		consoleSmallName_->SetText(consoleKinds_[s_tryledSelected] + "  ·  " + path.GetFilename());
+		consoleTitle_->SetText(path.WithReplacedExtension("").GetFilename());
+		consoleSub_->SetText("El emulador de " + consoleKinds_[s_tryledSelected] + " llegará a Tryled más adelante.");
+		for (auto *card : consoleCardValue_)
+			card->SetText("—");
+		return;
+	}
+	std::shared_ptr<GameInfo> ginfo = g_gameInfoCache->GetInfo(nullptr, path, kConsoleInfoFlags);
 	const bool ready = ginfo->Ready(GameInfoFlags::PARAM_SFO);
 	std::string title = ready ? ginfo->GetTitle() : path.GetFilename();
 
@@ -931,6 +1177,16 @@ void MainScreen::CreateViews() {
 }
 
 bool MainScreen::key(const KeyInput &key) {
+	if (consoleTitle_ && (key.flags & KeyInputFlags::DOWN)) {
+		if (key.keyCode == NKCODE_BUTTON_L1 || key.keyCode == NKCODE_BUTTON_L2) {
+			ConsoleSetTab(s_tryledTab - 1);
+			return true;
+		}
+		if (key.keyCode == NKCODE_BUTTON_R1 || key.keyCode == NKCODE_BUTTON_R2) {
+			ConsoleSetTab(s_tryledTab + 1);
+			return true;
+		}
+	}
 	if (key.flags & KeyInputFlags::DOWN) {
 		if (key.keyCode == NKCODE_F && (key.flags & KeyInputFlags::MOD_CTRL) && System_GetPropertyBool(SYSPROP_HAS_TEXT_INPUT_DIALOG)) {
 			auto se = GetI18NCategory(I18NCat::SEARCH);
@@ -1007,6 +1263,9 @@ void MainScreen::update() {
 			g_BackgroundAudio.SFX().Play(UI::UISound::STARTUP, Volume100ToMultiplier(g_Config.iUIVolume));
 		}
 	}
+	if (consoleTitle_ && consoleScanGen_ != g_tryledScanGen) {
+		RecreateViews();
+	}
 	if (consoleTitle_ && time_now_d() - consoleLastRefresh_ > 0.5) {
 		ConsoleRefreshInfo();
 	}
@@ -1033,15 +1292,15 @@ void MainScreen::OnLoadFile(UI::EventParams &e) {
 void MainScreen::DrawBackground(UIContext &dc) {
 	if (consoleTitle_) {
 		const double now = time_now_d();
-		if (!consoleGames_.empty() && s_tryledSelected < (int)consoleGames_.size()) {
+		if (!consoleGames_.empty() && s_tryledSelected < (int)consoleGames_.size() && consoleKinds_[s_tryledSelected] == "PSP") {
 			const float fade = EaseOut(float(now - s_consoleArtTime) / 0.5f);
 			// The previous game's art fades out underneath the new one.
-			if (fade < 1.0f && !s_consolePrevArt.empty()) {
-				std::shared_ptr<GameInfo> prev = g_gameInfoCache->GetInfo(dc.GetDrawContext(), s_consolePrevArt, GameInfoFlags::PIC1);
+			if (fade < 1.0f && !s_consolePrevArt.empty() && TryledConsoleOf(s_consolePrevArt) == "PSP") {
+				std::shared_ptr<GameInfo> prev = g_gameInfoCache->GetInfo(dc.GetDrawContext(), s_consolePrevArt, kConsoleInfoFlags);
 				if (prev->Ready(GameInfoFlags::PIC1) && prev->pic1.texture)
 					DrawConsoleArt(dc, prev->pic1.texture, 1.0f - fade, now);
 			}
-			std::shared_ptr<GameInfo> ginfo = g_gameInfoCache->GetInfo(dc.GetDrawContext(), consoleGames_[s_tryledSelected], GameInfoFlags::PIC1);
+			std::shared_ptr<GameInfo> ginfo = g_gameInfoCache->GetInfo(dc.GetDrawContext(), consoleGames_[s_tryledSelected], kConsoleInfoFlags);
 			if (ginfo->Ready(GameInfoFlags::PIC1) && ginfo->pic1.texture) {
 				const float loaded = std::clamp(float(now - ginfo->pic1.timeLoaded) * 3.0f, 0.0f, 1.0f);
 				DrawConsoleArt(dc, ginfo->pic1.texture, std::min(fade, loaded), now);

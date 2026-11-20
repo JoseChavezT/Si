@@ -432,6 +432,7 @@ public:
 	int iDeveloperSettingsCurrentTab;
 
 	std::string sThemeName;
+	std::string sTryledGamesFolder;  // Tryled: folder scanned for the console home.
 
 	// These aren't saved, just for instant debugging.
 	bool bLogFrameDrops;
