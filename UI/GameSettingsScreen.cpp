@@ -300,25 +300,55 @@ namespace {
 class ThemeChoice : public UI::Choice {
 public:
 	ThemeChoice(std::string_view name, std::string_view description, uint32_t bgColor, uint32_t accentColor, bool selected)
-		: UI::Choice(name, description), bgColor_(bgColor), accentColor_(accentColor) {
+		: UI::Choice(name), description_(description), bgColor_(bgColor), accentColor_(accentColor), isSelected_(selected) {
 		SetIconLeft(ImageID(selected ? "I_RADIO_SELECTED" : "I_RADIO_EMPTY"));
-		SetSelectedIndicator(selected);
+	}
+
+	void GetContentDimensionsBySpec(const UIContext &dc, UI::MeasureSpec horiz, UI::MeasureSpec vert, float &w, float &h) const override {
+		w = 0.0f;
+		h = description_.empty() ? UI::ITEM_HEIGHT : UI::ITEM_HEIGHT * 1.45f;
 	}
 
 	void Draw(UIContext &dc) override {
-		UI::Choice::Draw(dc);
-		const float size = bounds_.h * 0.42f;
+		UI::Style style = dc.GetTheme().itemStyle;
+		if (HasFocus()) style = dc.GetTheme().itemFocusedStyle;
+		if (down_) style = dc.GetTheme().itemDownStyle;
+		DrawBG(dc, style);
+
+		const float iconSize = UI::ITEM_HEIGHT;
+		dc.Draw()->DrawImage(image_, bounds_.x + iconSize * 0.5f, bounds_.centerY(), 1.0f, style.fgColor, ALIGN_CENTER);
+
+		// Swatches and checkmark on the right.
+		const float size = UI::ITEM_HEIGHT * 0.42f;
 		const float right = bounds_.x2() - 60.0f;
 		const float y = bounds_.centerY() - size * 0.5f;
 		// Outline so a black swatch is still visible on a black theme.
 		dc.FillRect(UI::Drawable(0x60FFFFFF), Bounds(right - size * 2.0f - 7.0f, y - 1.0f, size + 2.0f, size + 2.0f));
 		dc.FillRect(UI::Drawable(bgColor_ | 0xFF000000), Bounds(right - size * 2.0f - 6.0f, y, size, size));
 		dc.FillRect(UI::Drawable(accentColor_ | 0xFF000000), Bounds(right - size, y, size, size));
+		if (isSelected_) {
+			dc.Draw()->DrawImage(ImageID("I_CHECKMARK"), bounds_.x2() - 30, bounds_.centerY(), 1.0f, style.fgColor, ALIGN_CENTER);
+		}
+
+		const float textX = bounds_.x + iconSize;
+		const float textW = right - size * 2.0f - 20.0f - textX;
+		if (description_.empty()) {
+			dc.SetFontStyle(dc.GetTheme().uiFont);
+			dc.DrawTextRectSqueeze(text_, Bounds(textX, bounds_.y, textW, bounds_.h), style.fgColor, ALIGN_VCENTER);
+		} else {
+			dc.SetFontStyle(dc.GetTheme().uiFont);
+			dc.DrawTextRectSqueeze(text_, Bounds(textX, bounds_.y + 4.0f, textW, bounds_.h * 0.55f), style.fgColor, ALIGN_VCENTER);
+			dc.SetFontStyle(dc.GetTheme().uiFontSmall);
+			dc.DrawTextRectSqueeze(description_, Bounds(textX, bounds_.y + bounds_.h * 0.5f, textW, bounds_.h * 0.42f), colorAlpha(style.fgColor & 0xFFFFFF, 0.7f), ALIGN_VCENTER);
+		}
+		dc.SetFontStyle(dc.GetTheme().uiFont);
 	}
 
 private:
+	std::string description_;
 	uint32_t bgColor_;
 	uint32_t accentColor_;
+	bool isSelected_;
 };
 
 }  // namespace
@@ -330,13 +360,10 @@ void GameSettingsScreen::CreateThemeSettings(UI::ViewGroup *themeSettings) {
 	themeSettings->Add(new ItemHeader("Elige un tema"));
 	themeSettings->Add(new TextView("El tema cambia los menús, el fondo y los controles táctiles a la vez.", FLAG_WRAP_TEXT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(12, 4, 12, 8))));
 
-	for (const std::string &name : GetThemeInfoNames()) {
-		// Keep PPSSPP's original look available, under a clearer name.
+	auto addTheme = [this, themeSettings](const std::string &name) {
+		// PPSSPP's original look stays available, under a clearer name.
 		const std::string label = name == "Default" ? std::string("Clásico de PPSSPP") : name;
-		std::string description = GetThemeDescription(name);
-		if (name == "Default") {
-			description = "El aspecto original de PPSSPP.";
-		}
+		std::string description = name == "Default" ? std::string("El aspecto original de PPSSPP.") : GetThemeDescription(name);
 		ThemeChoice *choice = themeSettings->Add(new ThemeChoice(label, description, GetThemeBackgroundColor(name), GetThemeAccentColor(name), name == g_Config.sThemeName));
 		choice->OnClick.Add([this, name](EventParams &e) {
 			const bool changed = g_Config.sThemeName != name;
@@ -349,6 +376,22 @@ void GameSettingsScreen::CreateThemeSettings(UI::ViewGroup *themeSettings) {
 			}
 			RecreateViews();
 		});
+	};
+
+	// Tryled's own themes first, in a fixed order; then everything else (PPSSPP's and user themes).
+	static const char *const tryledThemes[] = { "Negro total", "Grafito", "Arcade retro", "Cristal" };
+	const std::vector<std::string> allThemes = GetThemeInfoNames();
+	for (const char *name : tryledThemes) {
+		if (std::find(allThemes.begin(), allThemes.end(), name) != allThemes.end())
+			addTheme(name);
+	}
+	themeSettings->Add(new ItemHeader("Más temas"));
+	if (std::find(allThemes.begin(), allThemes.end(), "Default") != allThemes.end())
+		addTheme("Default");
+	for (const std::string &name : allThemes) {
+		if (name == "Default" || std::find(std::begin(tryledThemes), std::end(tryledThemes), name) != std::end(tryledThemes))
+			continue;
+		addTheme(name);
 	}
 
 	themeSettings->Add(new ItemHeader("Ajustes finos"));
