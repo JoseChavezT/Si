@@ -41,6 +41,7 @@ protected:
 	void OnReset(UI::EventParams &e);
 	void OnMode(UI::EventParams &e);
 	void CreateButtonPanel(UI::ViewGroup *panel, DeviceOrientation orientation);
+	std::string ScopeGameId() const;
 
 private:
 	UI::ChoiceStrip *mode_ = nullptr;

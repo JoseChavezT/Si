@@ -17,6 +17,9 @@ struct RetroCoreInfo {
 	const char *name;      // Human readable emulator name.
 };
 
+// Id for the per-game settings of a game of another console (PSP games use their disc id).
+std::string TryledRetroGameId(const Path &game);
+
 // Returns the core to use for a console, or nullptr if Tryled has none yet.
 const RetroCoreInfo *RetroCoreForConsole(const std::string &console);
 

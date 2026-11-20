@@ -38,6 +38,8 @@
 #include "UI/TouchControlLayoutScreen.h"
 #include "UI/TouchControlVisibilityScreen.h"
 #include "UI/TryledDraw.h"
+#include "UI/RetroCore.h"
+#include "Core/ELF/ParamSFO.h"
 
 static float layoutAreaScale = 1.0f;
 
@@ -606,6 +608,16 @@ DragDropButton *ControlLayoutView::getPickedControl(const int x, const int y) {
 	return bestMatch;
 }
 
+std::string TouchControlLayoutScreen::ScopeGameId() const {
+	if (gamePath_.empty())
+		return "";
+	if (RetroCore::AnyActive())
+		return TryledRetroGameId(gamePath_);
+	if (g_paramSFO.IsValid())
+		return g_paramSFO.GetDiscID();
+	return "";
+}
+
 void TouchControlLayoutScreen::CreateButtonPanel(UI::ViewGroup *panel, DeviceOrientation orientation) {
 	using namespace UI;
 	TouchControlConfig &touch = g_Config.GetTouchControlsConfig(orientation);
@@ -837,6 +849,36 @@ void TouchControlLayoutScreen::CreateViews() {
 		topPanel_ = panel;
 		root->Add(layoutView_);
 		return;
+	}
+
+	// Where the layout is saved: for every game, or only for the game being played.
+	const std::string scopeId = ScopeGameId();
+	if (!scopeId.empty()) {
+		ChoiceStrip *scope = row()->Add(new ChoiceStrip(ORIENT_HORIZONTAL, new LinearLayoutParams(0.0f, rowH, 1.0f, Margins(0, 8, 0, 0))));
+		scope->AddChoice("Todos los juegos");
+		scope->AddChoice("Solo este juego");
+		for (int i = 0; i < scope->GetNumSubviews(); i++)
+			scope->GetViewByIndex(i)->ReplaceLayoutParams(half());
+		scope->SetSelection(g_Config.IsGameSpecific() ? 1 : 0, false);
+		scope->OnChoice.Add([this, scopeId](UI::EventParams &e) {
+			if (e.a == 1 && !g_Config.IsGameSpecific()) {
+				// Start from the current layout, then keep changes for this game only.
+				g_Config.CreateGameConfig(scopeId);
+				g_Config.SaveGameConfig(scopeId, gamePath_.WithReplacedExtension("").GetFilename());
+				g_Config.LoadGameConfig(scopeId);
+				RecreateViews();
+			} else if (e.a == 0 && g_Config.IsGameSpecific()) {
+				screenManager()->push(new UI::MessagePopupScreen("Todos los juegos",
+					"Este juego dejar\u00e1 de tener ajustes propios (botones, gr\u00e1ficos y dem\u00e1s) y usar\u00e1 los de todos los juegos.",
+					"Aceptar", "Cancelar", [this, scopeId](bool yes) {
+					if (yes) {
+						g_Config.UnloadGameConfig();
+						g_Config.DeleteGameConfig(scopeId);
+					}
+					RecreateViews();
+				}));
+			}
+		});
 	}
 
 	hint_ = panel->Add(new TextView(HintText(editMode_), ALIGN_HCENTER | FLAG_WRAP_TEXT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(10, 8, 10, 2))));

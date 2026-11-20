@@ -71,6 +71,19 @@ static RetroCore *g_activeCore = nullptr;
 // Guards g_activeCore against the audio thread while a core is loaded or unloaded.
 static std::mutex g_activeLock;
 
+std::string TryledRetroGameId(const Path &game) {
+	std::string id = "TRYLED-";
+	for (char c : game.WithReplacedExtension("").GetFilename()) {
+		if (isalnum((unsigned char)c))
+			id += (char)toupper((unsigned char)c);
+		else if (id.back() != '_')
+			id += '_';
+		if (id.size() >= 48)
+			break;
+	}
+	return id;
+}
+
 bool RetroCore::AnyActive() {
 	std::lock_guard<std::mutex> guard(g_activeLock);
 	return g_activeCore != nullptr;

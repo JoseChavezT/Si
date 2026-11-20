@@ -22,6 +22,8 @@
 #include "Common/StringUtils.h"
 
 RetroScreen::RetroScreen(const Path &game, const RetroCoreInfo &core) : game_(game), info_(core) {
+	// Per-game settings (touch layout, opacity...), if this game has its own.
+	g_Config.LoadGameConfig(TryledRetroGameId(game_));
 	loaded_ = core_.Load(info_, game_, &error_);
 	nextFrameTime_ = time_now_d();
 	g_controlMapper.AddListener(this);
@@ -33,6 +35,8 @@ RetroScreen::RetroScreen(const Path &game, const RetroCoreInfo &core) : game_(ga
 RetroScreen::~RetroScreen() {
 	g_controlMapper.RemoveListener(this);
 	core_.Unload();
+	if (g_Config.IsGameSpecific())
+		g_Config.UnloadGameConfig();
 	for (auto *&tex : textures_) {
 		if (tex) {
 			tex->Release();
@@ -177,8 +181,8 @@ static int s_retroSlot = 0;
 // the actions on the right. Same layout as the approved preview.
 class RetroPauseScreen : public UIDialogScreen {
 public:
-	RetroPauseScreen(const std::string &title, Draw::Texture *frame, float aspect, RetroCore *core, std::function<void(int)> onAction)
-		: title_(title), frame_(frame), aspect_(aspect), core_(core), onAction_(onAction) {}
+	RetroPauseScreen(const Path &game, const std::string &title, Draw::Texture *frame, float aspect, RetroCore *core, std::function<void(int)> onAction)
+		: game_(game), title_(title), frame_(frame), aspect_(aspect), core_(core), onAction_(onAction) {}
 	const char *tag() const override { return "RetroPause"; }
 
 	enum Action { CONTINUE = 0, SAVE, LOAD, RESET, EXIT };
@@ -235,7 +239,7 @@ protected:
 		load->OnClick.Add([this](EventParams &) { Done(LOAD); });
 		menu->Add(new Choice("Reiniciar", ImageID("I_ROTATE_LEFT"), new LinearLayoutParams(FILL_PARENT, 42.0f)))->OnClick.Add([this](EventParams &) { Done(RESET); });
 		menu->Add(new Choice("Editar controles", ImageID("I_CONTROLLER"), new LinearLayoutParams(FILL_PARENT, 42.0f)))->OnClick.Add([this](EventParams &) {
-			screenManager()->push(new TouchControlLayoutScreen(Path()));
+			screenManager()->push(new TouchControlLayoutScreen(game_));
 		});
 		menu->Add(new Choice("Ajustes", ImageID("I_GEAR"), new LinearLayoutParams(FILL_PARENT, 42.0f)))->OnClick.Add([this](EventParams &) {
 			screenManager()->push(new GameSettingsScreen(Path()));
@@ -285,6 +289,7 @@ private:
 		TriggerFinish(DR_OK);
 	}
 
+	Path game_;
 	std::string title_;
 	Draw::Texture *frame_;
 	float aspect_;
@@ -302,7 +307,7 @@ void RetroScreen::OpenPauseMenu() {
 	// With a gamepad or keyboard, every press should move through the menu right away.
 	UI::EnableFocusMovement(pauseFromButton_);
 	pauseFromButton_ = false;
-	auto *menu = new RetroPauseScreen(game_.WithReplacedExtension("").GetFilename(), textures_[texIndex_], core_.AspectRatio(), &core_, [this](int action) {
+	auto *menu = new RetroPauseScreen(game_, game_.WithReplacedExtension("").GetFilename(), textures_[texIndex_], core_.AspectRatio(), &core_, [this](int action) {
 		switch (action) {
 		case RetroPauseScreen::SAVE:
 			g_OSD.Show(OSDType::MESSAGE_SUCCESS, core_.SaveState(s_retroSlot) ? StringFromFormat("Estado guardado en la ranura %d", s_retroSlot + 1) : std::string("No se pudo guardar el estado"), 2.0f);
