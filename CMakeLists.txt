@@ -1582,6 +1582,10 @@ if(NOT LIBRETRO)
 	list(APPEND NativeAppSource
 		UI/AudioCommon.h
 		UI/AudioCommon.cpp
+		UI/RetroCore.cpp
+		UI/RetroCore.h
+		UI/RetroScreen.cpp
+		UI/RetroScreen.h
 	)
 endif()
 
@@ -2875,6 +2879,32 @@ set(WindowsFiles
 if(ANDROID AND ARM64)
 	# Support 16kb page size on Android
 	target_link_options(${CoreLibName} PRIVATE "-Wl,-z,max-page-size=16384")
+endif()
+
+# Tryled: emulators for other consoles, as libretro cores built from source (git submodules
+# in ext/tryled-cores). Each one becomes lib<name>_libretro.so next to the main library, so
+# Gradle packages it in the APK and RetroCore can dlopen() it.
+if(ANDROID AND EXISTS "${CMAKE_SOURCE_DIR}/ext/tryled-cores/mgba/CMakeLists.txt")
+	include(ExternalProject)
+	ExternalProject_Add(tryled_core_mgba
+		SOURCE_DIR "${CMAKE_SOURCE_DIR}/ext/tryled-cores/mgba"
+		BINARY_DIR "${CMAKE_BINARY_DIR}/tryled-cores/mgba"
+		CMAKE_ARGS
+			-DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
+			-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+			-DANDROID_ABI=${ANDROID_ABI}
+			-DANDROID_PLATFORM=${ANDROID_PLATFORM}
+			-DCMAKE_BUILD_TYPE=Release
+			"-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
+			-DBUILD_LIBRETRO=ON -DBUILD_QT=OFF -DBUILD_SDL=OFF -DBUILD_SHARED=OFF -DBUILD_STATIC=OFF -DSKIP_LIBRARY=ON
+			-DBUILD_GL=OFF -DBUILD_GLES2=OFF -DBUILD_GLES3=OFF -DUSE_EPOXY=OFF -DUSE_FFMPEG=OFF -DUSE_ZLIB=OFF -DUSE_PNG=OFF
+			-DUSE_LIBZIP=OFF -DUSE_SQLITE3=OFF -DUSE_ELF=OFF -DUSE_LZMA=OFF -DUSE_DISCORD_RPC=OFF -DUSE_EDITLINE=OFF
+			-DUSE_LUA=OFF -DUSE_JSON_C=OFF -DUSE_MINIZIP=OFF -DENABLE_SCRIPTING=OFF -DUSE_DEBUGGERS=OFF -DUSE_GDB_STUB=OFF
+		BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target mgba_libretro
+		INSTALL_COMMAND ${CMAKE_COMMAND} -E copy <BINARY_DIR>/mgba_libretro.so ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/libmgba_libretro.so
+		BUILD_BYPRODUCTS ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/libmgba_libretro.so
+	)
+	add_dependencies(${CoreLibName} tryled_core_mgba)
 endif()
 
 list(APPEND LinkCommon ${CoreLibName} ${CMAKE_THREAD_LIBS_INIT})

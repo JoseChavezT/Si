@@ -69,3 +69,6 @@
 	path = ext/aemu_postoffice
 	url = https://github.com/Kethen/aemu_postoffice.git
 	branch = ppsspp
+[submodule "ext/tryled-cores/mgba"]
+	path = ext/tryled-cores/mgba
+	url = https://github.com/mgba-emu/mgba.git

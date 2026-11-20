@@ -51,6 +51,7 @@
 #include "UI/InstallZipScreen.h"
 #include "UI/Background.h"
 #include "UI/GameBrowser.h"
+#include "UI/RetroScreen.h"
 #include "Core/Config.h"
 #include "Core/Loaders.h"
 #include "Common/Data/Text/I18n.h"
@@ -894,7 +895,12 @@ void MainScreen::ConsoleLaunchSelected() {
 	Path path = consoleGames_[s_tryledSelected];
 	const std::string &console = consoleKinds_[s_tryledSelected];
 	if (console != "PSP") {
-		g_OSD.Show(OSDType::MESSAGE_INFO, "El emulador de " + console + " aún no está en Tryled. Por ahora solo se pueden jugar juegos de PSP.", 4.0f, "tryled-noemu");
+		const RetroCoreInfo *core = RetroCoreForConsole(console);
+		if (!core) {
+			g_OSD.Show(OSDType::MESSAGE_INFO, "El emulador de " + console + " aún no está en Tryled.", 4.0f, "tryled-noemu");
+			return;
+		}
+		screenManager()->push(new RetroScreen(path, *core));
 		return;
 	}
 	// After playing, this game moves to the front of the recent list.
@@ -950,7 +956,8 @@ void MainScreen::ConsoleRefreshInfo() {
 	if (consoleKinds_[s_tryledSelected] != "PSP") {
 		consoleSmallName_->SetText(consoleKinds_[s_tryledSelected] + "  ·  " + path.GetFilename());
 		consoleTitle_->SetText(path.WithReplacedExtension("").GetFilename());
-		consoleSub_->SetText("El emulador de " + consoleKinds_[s_tryledSelected] + " llegará a Tryled más adelante.");
+		const RetroCoreInfo *core = RetroCoreForConsole(consoleKinds_[s_tryledSelected]);
+		consoleSub_->SetText(core ? std::string("Se juega con ") + core->name + ", integrado en Tryled." : "El emulador de " + consoleKinds_[s_tryledSelected] + " llegará a Tryled más adelante.");
 		for (auto *card : consoleCardValue_)
 			card->SetText("—");
 		return;
