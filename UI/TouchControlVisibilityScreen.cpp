@@ -144,8 +144,10 @@ private:
 	float lastTouchX_ = -1.0f;
 };
 
+}  // namespace
+
 // Names of what a combined button presses, e.g. "Equis + Cuadrado".
-std::string ComboDescription(uint64_t mask) {
+std::string TryledComboDescription(uint64_t mask) {
 	using namespace CustomKeyData;
 	static const char *const names[] = { "Cuadrado", "Triángulo", "Círculo", "Equis", "Arriba", "Abajo", "Izquierda", "Derecha", "Start", "Select", "L", "R" };
 	auto mc = GetI18NCategory(I18NCat::MAPPABLECONTROLS);
@@ -162,8 +164,6 @@ std::string ComboDescription(uint64_t mask) {
 	}
 	return out;
 }
-
-}  // namespace
 
 std::string_view TouchControlVisibilityScreen::GetTitle() const {
 	return "Botones en pantalla";
@@ -247,7 +247,7 @@ void TouchControlVisibilityScreen::CreateDialogViews(UI::ViewGroup *parent) {
 				freeSlot = i;
 			continue;
 		}
-		std::string keys = ComboDescription(g_Config.CustomButton[i].key);
+		std::string keys = TryledComboDescription(g_Config.CustomButton[i].key);
 		if (keys.empty())
 			keys = "Sin asignar";
 		TryledButtonTile *tile = combos->Add(new TryledButtonTile(StringFromFormat("Combinado %d", i + 1), keys,

@@ -27,6 +27,9 @@ namespace UI {
 	class CheckBox;
 }
 
+// Names of what a combined (custom) button presses, e.g. "Equis + Cuadrado".
+std::string TryledComboDescription(uint64_t mask);
+
 struct TouchButtonToggle {
 	std::string key;
 	bool *show;

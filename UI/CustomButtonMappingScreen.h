@@ -27,7 +27,9 @@ namespace UI {
 
 class CustomButtonMappingScreen : public UISimpleBaseDialogScreen {
 public:
-	CustomButtonMappingScreen(DeviceOrientation deviceOrientation, const Path &gamePath, int id) : UISimpleBaseDialogScreen(gamePath, SimpleDialogFlags::Default), deviceOrientation_(deviceOrientation), id_(id) {}
+	CustomButtonMappingScreen(DeviceOrientation deviceOrientation, const Path &gamePath, int id) : UISimpleBaseDialogScreen(gamePath, SimpleDialogFlags::Default), deviceOrientation_(deviceOrientation), id_(id) {
+		title_ = "Combinado " + std::to_string(id + 1);
+	}
 
 	const char *tag() const override { return "CustomButton"; }
 
@@ -44,6 +46,10 @@ protected:
 
 private:
 	void saveArray();
+	void UpdateSummary();
+	uint64_t arrayToIntTryled() const;
+	UI::TextView *summary_ = nullptr;
+	std::string title_;
 
 	bool array[ARRAY_SIZE(CustomKeyData::g_customKeyList)]{};
 	int id_;
