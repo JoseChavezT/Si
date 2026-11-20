@@ -2098,6 +2098,15 @@ bool PlayTimeTracker::GetPlayedTimeString(std::string_view gameId, std::string *
 	return true;
 }
 
+bool PlayTimeTracker::GetPlayedSeconds(std::string_view gameId, int *seconds) const {
+	auto iter = tracker_.find(gameId);
+	if (iter == tracker_.end()) {
+		return false;
+	}
+	*seconds = iter->second.totalTimePlayed;
+	return true;
+}
+
 // This matches exactly the old shift-based curve.
 float Volume10ToMultiplier(int volume) {
 	// Allow muting entirely.

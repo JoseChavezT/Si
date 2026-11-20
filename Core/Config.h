@@ -59,6 +59,8 @@ public:
 	void Save(Section *section);
 
 	bool GetPlayedTimeString(std::string_view, std::string *str) const;
+	// Tryled: raw total, in seconds. Returns false if the game was never played.
+	bool GetPlayedSeconds(std::string_view gameId, int *seconds) const;
 
 private:
 	std::map<std::string, PlayTime, std::less<>> tracker_;

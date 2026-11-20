@@ -61,6 +61,20 @@ protected:
 	GameBrowser *CreateBrowserTab(const Path &path, std::string_view title, std::string_view howToTitle, std::string_view howToUri, BrowseFlags browseFlags, bool *bGridView, float *scrollPos);
 	void CreateMainButtons(UI::ViewGroup *parent, bool vertical);
 
+	// Tryled: console-style home screen ("Modo consola").
+	void CreateConsoleViews();
+	void ConsoleSelect(int index);
+	void ConsoleRefreshInfo();
+	void ConsoleLaunchSelected();
+	bool ConsoleMode() const;
+	std::vector<Path> consoleGames_;
+	UI::TextView *consoleSmallName_ = nullptr;
+	UI::TextView *consoleTitle_ = nullptr;
+	UI::TextView *consoleSub_ = nullptr;
+	UI::TextView *consoleCardValue_[3]{};
+	UI::TextView *consoleClock_ = nullptr;
+	double consoleLastRefresh_ = 0.0;
+
 	void DrawBackground(UIContext &dc) override;
 	void update() override;
 	void sendMessage(UIMessage message, const char *value) override;
