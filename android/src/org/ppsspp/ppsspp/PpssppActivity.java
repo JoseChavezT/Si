@@ -588,24 +588,16 @@ public class PpssppActivity extends AppCompatActivity implements SensorEventList
 
 		// WARNING: when adding new modes here, check SizeManager's workaround in surfaceCreated.j
 
-		int nativeRotation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+		// Tryled is landscape-only: anything that isn't a fixed landscape side follows the sensor in landscape.
+		int nativeRotation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
 		switch (rot) {
-			case 0:
-				nativeRotation = ActivityInfo.SCREEN_ORIENTATION_SENSOR;
-				break;
 			case 1:
 				nativeRotation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
-				break;
-			case 2:
-				nativeRotation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
 				break;
 			case 3:
 				nativeRotation = ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE;
 				break;
-			case 4:
-				nativeRotation = ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT;
-				break;
-			case 5:
+			default:
 				nativeRotation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
 				break;
 		}

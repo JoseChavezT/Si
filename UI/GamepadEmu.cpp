@@ -33,6 +33,7 @@
 #include "Core/HLE/sceCtrl.h"
 #include "Core/ControlMapper.h"
 #include "UI/GamepadEmu.h"
+#include "UI/Theme.h"
 
 const float TOUCH_SCALE_FACTOR = 1.5f;
 
@@ -87,6 +88,9 @@ float GamepadGetOpacity() {
 }
 
 static u32 GetButtonColor() {
+	u32 themeColor;
+	if (GetThemeTouchButtonColor(&themeColor))
+		return themeColor;
 	return g_Config.iTouchButtonStyle != 0 ? 0xFFFFFF : 0xc0b080;
 }
 
@@ -188,7 +192,7 @@ void MultiTouchButton::Draw(UIContext &dc) {
 
 	uint32_t colorBg = colorAlpha(GetButtonColor(), opacity);
 	uint32_t downBg = colorAlpha(0xFFFFFF, opacity * 0.5f);
-	uint32_t color = colorAlpha(0xFFFFFF, opacity);
+	uint32_t color = colorAlpha(GetThemeTouchIconColor(), opacity);
 
 	if (IsDownVisually() && g_Config.iTouchButtonStyle == 2) {
 		if (bgImg_ != bgDownImg_)
@@ -486,7 +490,7 @@ void PSPDpad::Draw(UIContext &dc) {
 		}
 
 		uint32_t colorBg = colorAlpha(GetButtonColor(), imgOpacity);
-		uint32_t color = colorAlpha(0xFFFFFF, imgOpacity);
+		uint32_t color = colorAlpha(GetThemeTouchIconColor(), imgOpacity);
 
 		dc.Draw()->DrawImageRotated(arrowIndex_, x, y, imgScale, angle + PI, colorBg, false);
 		if (overlayIndex_.isValid())

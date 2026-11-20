@@ -260,6 +260,11 @@ void AddRotationPicker(ScreenManager *screenManager, UI::ViewGroup *parent, bool
 	// Portrait Reversed is not recommended on iPhone (and we also ban it in the plist).
 	// However it's recommended to support it on iPad, so maybe we will in the future.
 	rot->HideChoice(ROTATION_LOCKED_VERTICAL180);
+#if PPSSPP_PLATFORM(ANDROID)
+	// Tryled is landscape-only.
+	rot->HideChoice(ROTATION_AUTO);
+	rot->HideChoice(ROTATION_LOCKED_VERTICAL);
+#endif
 	rot->OnChoice.Add([](UI::EventParams &) {
 		INFO_LOG(Log::System, "New display rotation: %d", g_Config.iScreenRotation);
 		System_Notify(SystemNotification::ROTATE_UPDATED);

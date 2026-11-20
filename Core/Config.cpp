@@ -217,7 +217,8 @@ static int DefaultUIScaleFactor() {
 
 static int DefaultScreenRotation() {
 #if PPSSPP_PLATFORM(ANDROID)
-	return ROTATION_LOCKED_HORIZONTAL;
+	// Tryled is landscape-only: follow the sensor between the two landscape orientations.
+	return ROTATION_AUTO_HORIZONTAL;
 #else
 	return ROTATION_AUTO;
 #endif
@@ -312,7 +313,7 @@ static const ConfigSetting generalSettings[] = {
 	ConfigSetting("ScreenRotation", SETTING(g_Config, iScreenRotation), &DefaultScreenRotation, CfgFlag::DEFAULT),
 #endif
 
-	ConfigSetting("BackgroundAnimation", SETTING(g_Config, iBackgroundAnimation), 1, CfgFlag::DEFAULT),
+	ConfigSetting("BackgroundAnimation", SETTING(g_Config, iBackgroundAnimation), 0, CfgFlag::DEFAULT),
 	ConfigSetting("TransparentBackground", SETTING(g_Config, bTransparentBackground), true, CfgFlag::DEFAULT),
 	ConfigSetting("UITint", SETTING(g_Config, fUITint), 0.0, CfgFlag::DEFAULT),
 	ConfigSetting("UISaturation", SETTING(g_Config, fUISaturation), &DefaultUISaturation, CfgFlag::DEFAULT),
@@ -1008,7 +1009,7 @@ static const ConfigSetting controlSettings[] = {
 	ConfigSetting("DisableDpadDiagonals", SETTING(g_Config, bDisableDpadDiagonals), false, CfgFlag::PER_GAME),
 	ConfigSetting("GamepadOnlyFocused", SETTING(g_Config, bGamepadOnlyFocused), false, CfgFlag::PER_GAME),
 	ConfigSetting("TouchButtonStyle", SETTING(g_Config, iTouchButtonStyle), 1, CfgFlag::PER_GAME),
-	ConfigSetting("TouchButtonOpacity", SETTING(g_Config, iTouchButtonOpacity), 65, CfgFlag::PER_GAME),
+	ConfigSetting("TouchButtonOpacity", SETTING(g_Config, iTouchButtonOpacity), 30, CfgFlag::PER_GAME),
 	ConfigSetting("TouchButtonHideSeconds", SETTING(g_Config, iTouchButtonHideSeconds), 8, CfgFlag::PER_GAME),
 	ConfigSetting("AutoCenterTouchAnalog", SETTING(g_Config, bAutoCenterTouchAnalog), false, CfgFlag::PER_GAME),
 	ConfigSetting("StickyTouchDPad", SETTING(g_Config, bStickyTouchDPad), false, CfgFlag::PER_GAME),
@@ -1135,7 +1136,7 @@ static const ConfigSetting upgradeSettings[] = {
 };
 
 static const ConfigSetting themeSettings[] = {
-	ConfigSetting("ThemeName", SETTING(g_Config, sThemeName), "Default", CfgFlag::DEFAULT),
+	ConfigSetting("ThemeName", SETTING(g_Config, sThemeName), "Negro total", CfgFlag::DEFAULT),
 };
 
 static const ConfigSetting vrSettings[] = {
@@ -1609,6 +1610,12 @@ void Config::PostLoadCleanup() {
 	if (g_Config.iScreenRotation == ROTATION_LOCKED_VERTICAL180) {
 		g_Config.iScreenRotation = ROTATION_LOCKED_VERTICAL;
 	}
+#if PPSSPP_PLATFORM(ANDROID)
+	// Tryled is landscape-only.
+	if (g_Config.iScreenRotation == ROTATION_AUTO || g_Config.iScreenRotation == ROTATION_LOCKED_VERTICAL) {
+		g_Config.iScreenRotation = ROTATION_AUTO_HORIZONTAL;
+	}
+#endif
 
 	// Clamp save state slot count to somewhat sane limits.
 	g_Config.iSaveStateSlotCount = std::clamp(g_Config.iSaveStateSlotCount, 1, 100);

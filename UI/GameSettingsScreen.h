@@ -51,6 +51,7 @@ protected:
 private:
 	void PreCreateViews() override;
 
+	void CreateThemeSettings(UI::ViewGroup *themeSettings);
 	void CreateGraphicsSettings(UI::ViewGroup *graphicsSettings);
 	void CreateControlsSettings(UI::ViewGroup *tools);
 	void CreateAudioSettings(UI::ViewGroup *audioSettings);

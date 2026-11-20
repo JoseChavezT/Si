@@ -62,6 +62,17 @@ struct ThemeInfo {
 	uint32_t uPopupSliderColor = 0xFFFFFFFF;
 	uint32_t uPopupSliderFocusedColor = 0xFFEDC24C;
 
+	// Tryled: a theme can also restyle the on-screen touch controls and the menu background.
+	// Values < 0 (or has* == false) mean "not set by this theme, keep the user's setting".
+	std::string description;
+	bool hasTouchButtonColor = false;
+	uint32_t uTouchButtonColor = 0xFFFFFFFF;
+	bool hasTouchIconColor = false;
+	uint32_t uTouchIconColor = 0xFFFFFFFF;
+	int iTouchButtonStyle = -1;
+	int iTouchButtonOpacity = -1;
+	int iBackgroundAnimation = -1;
+
 	bool operator == (const std::string &other) {
 		return name == other;
 	}
@@ -72,6 +83,10 @@ struct ThemeInfo {
 
 static UI::Theme ui_theme;
 static std::vector<ThemeInfo> themeInfos;
+static int currentThemeIndex = -1;
+
+// Tryled's main theme. Used when the configured theme doesn't exist.
+static const char *const TRYLED_DEFAULT_THEME = "Negro total";
 
 static void LoadThemeInfo(const std::vector<Path> &directories) {
 	themeInfos.clear();
@@ -161,6 +176,13 @@ static void LoadThemeInfo(const std::vector<Path> &directories) {
 				section.Get("PopupSliderColor", &info.uPopupSliderColor);
 				section.Get("PopupSliderFocusedColor", &info.uPopupSliderFocusedColor);
 
+				section.Get("Description", &info.description);
+				info.hasTouchButtonColor = section.Get("TouchButtonColor", &info.uTouchButtonColor);
+				info.hasTouchIconColor = section.Get("TouchButtonIconColor", &info.uTouchIconColor);
+				section.Get("TouchButtonStyle", &info.iTouchButtonStyle);
+				section.Get("TouchButtonOpacity", &info.iTouchButtonOpacity);
+				section.Get("BackgroundAnimation", &info.iBackgroundAnimation);
+
 				appendTheme(info);
 			}
 		}
@@ -191,9 +213,14 @@ void UpdateTheme() {
 		}
 	}
 
-	// Reset to Default if not found
+	// Reset to Tryled's main theme (or Default) if not found
 	if (selectedThemeIndex < 0 || selectedThemeIndex >= themeInfos.size()) {
-		g_Config.sThemeName = "Default";
+		for (int i = 0; i < themeInfos.size(); ++i) {
+			if (themeInfos[i].name == TRYLED_DEFAULT_THEME) {
+				defaultThemeIndex = i;
+			}
+		}
+		g_Config.sThemeName = defaultThemeIndex >= 0 ? themeInfos[defaultThemeIndex].name : "Default";
 		selectedThemeIndex = defaultThemeIndex;
 		if (selectedThemeIndex < 0) {
 			_dbg_assert_(false);
@@ -224,6 +251,7 @@ void UpdateTheme() {
 	ui_theme.sliderKnob = ImageID("I_CIRCLE");
 	ui_theme.dropShadow4Grid = ImageID("I_DROP_SHADOW");
 
+	currentThemeIndex = selectedThemeIndex;
 	const ThemeInfo &themeInfo = themeInfos[selectedThemeIndex];
 
 	// Actual configurable themes setting start here
@@ -265,4 +293,61 @@ std::vector<std::string> GetThemeInfoNames() {
 		names.push_back(info.name);
 	}
 	return names;
+}
+
+static const ThemeInfo *CurrentThemeInfo() {
+	if (currentThemeIndex < 0 || currentThemeIndex >= (int)themeInfos.size())
+		return nullptr;
+	return &themeInfos[currentThemeIndex];
+}
+
+std::string GetThemeDescription(std::string_view name) {
+	for (const auto &info : themeInfos) {
+		if (info.name == name)
+			return info.description;
+	}
+	return "";
+}
+
+uint32_t GetThemeBackgroundColor(std::string_view name) {
+	for (const auto &info : themeInfos) {
+		if (info.name == name)
+			return info.uBackgroundColor;
+	}
+	return 0xFF000000;
+}
+
+uint32_t GetThemeAccentColor(std::string_view name) {
+	for (const auto &info : themeInfos) {
+		if (info.name == name)
+			return info.uItemFocusedStyleBg;
+	}
+	return 0xFFFFFFFF;
+}
+
+bool GetThemeTouchButtonColor(uint32_t *color) {
+	const ThemeInfo *info = CurrentThemeInfo();
+	if (!info || !info->hasTouchButtonColor)
+		return false;
+	*color = info->uTouchButtonColor & 0x00FFFFFF;
+	return true;
+}
+
+uint32_t GetThemeTouchIconColor() {
+	const ThemeInfo *info = CurrentThemeInfo();
+	if (!info || !info->hasTouchIconColor)
+		return 0xFFFFFF;
+	return info->uTouchIconColor & 0x00FFFFFF;
+}
+
+void ApplyThemeSettings() {
+	const ThemeInfo *info = CurrentThemeInfo();
+	if (!info)
+		return;
+	if (info->iTouchButtonStyle >= 0)
+		g_Config.iTouchButtonStyle = info->iTouchButtonStyle;
+	if (info->iTouchButtonOpacity >= 0)
+		g_Config.iTouchButtonOpacity = info->iTouchButtonOpacity;
+	if (info->iBackgroundAnimation >= 0)
+		g_Config.iBackgroundAnimation = info->iBackgroundAnimation;
 }

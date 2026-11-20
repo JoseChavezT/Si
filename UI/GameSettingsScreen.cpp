@@ -244,6 +244,12 @@ void GameSettingsScreen::CreateTabs() {
 	using namespace UI;
 	auto ms = GetI18NCategory(I18NCat::MAINSETTINGS);
 
+	// Tryled: themes get their own tab, first in the list.
+	AddTab("GameSettingsThemes", "Temas", ImageID("I_GRID"), [this](UI::LinearLayout *parent) {
+		parent->Add(new PaneTitleBar(gamePath_, "Temas", ""));
+		CreateThemeSettings(parent);
+	});
+
 	AddTab("GameSettingsGraphics", ms->T("Graphics"), ImageID("I_DISPLAY"), [this](UI::LinearLayout *parent) {
 		auto ms = GetI18NCategory(I18NCat::MAINSETTINGS);
 		parent->Add(new PaneTitleBar(gamePath_, ms->T("Graphics"), "graphics", new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
@@ -286,6 +292,76 @@ void GameSettingsScreen::CreateTabs() {
 			CreateVRSettings(parent);
 		});
 	}
+}
+
+namespace {
+
+// A theme entry: radio icon, name, description and two color swatches (background + accent).
+class ThemeChoice : public UI::Choice {
+public:
+	ThemeChoice(std::string_view name, std::string_view description, uint32_t bgColor, uint32_t accentColor, bool selected)
+		: UI::Choice(name, description), bgColor_(bgColor), accentColor_(accentColor) {
+		SetIconLeft(ImageID(selected ? "I_RADIO_SELECTED" : "I_RADIO_EMPTY"));
+		SetSelectedIndicator(selected);
+	}
+
+	void Draw(UIContext &dc) override {
+		UI::Choice::Draw(dc);
+		const float size = bounds_.h * 0.42f;
+		const float right = bounds_.x2() - 60.0f;
+		const float y = bounds_.centerY() - size * 0.5f;
+		// Outline so a black swatch is still visible on a black theme.
+		dc.FillRect(UI::Drawable(0x60FFFFFF), Bounds(right - size * 2.0f - 7.0f, y - 1.0f, size + 2.0f, size + 2.0f));
+		dc.FillRect(UI::Drawable(bgColor_ | 0xFF000000), Bounds(right - size * 2.0f - 6.0f, y, size, size));
+		dc.FillRect(UI::Drawable(accentColor_ | 0xFF000000), Bounds(right - size, y, size, size));
+	}
+
+private:
+	uint32_t bgColor_;
+	uint32_t accentColor_;
+};
+
+}  // namespace
+
+void GameSettingsScreen::CreateThemeSettings(UI::ViewGroup *themeSettings) {
+	using namespace UI;
+	auto co = GetI18NCategory(I18NCat::CONTROLS);
+
+	themeSettings->Add(new ItemHeader("Elige un tema"));
+	themeSettings->Add(new TextView("El tema cambia los menús, el fondo y los controles táctiles a la vez.", FLAG_WRAP_TEXT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(12, 4, 12, 8))));
+
+	for (const std::string &name : GetThemeInfoNames()) {
+		// Keep PPSSPP's original look available, under a clearer name.
+		const std::string label = name == "Default" ? std::string("Clásico de PPSSPP") : name;
+		std::string description = GetThemeDescription(name);
+		if (name == "Default") {
+			description = "El aspecto original de PPSSPP.";
+		}
+		ThemeChoice *choice = themeSettings->Add(new ThemeChoice(label, description, GetThemeBackgroundColor(name), GetThemeAccentColor(name), name == g_Config.sThemeName));
+		choice->OnClick.Add([this, name](EventParams &e) {
+			const bool changed = g_Config.sThemeName != name;
+			g_Config.sThemeName = name;
+			UpdateTheme();
+			ApplyThemeSettings();
+			if (changed) {
+				g_Config.fUITint = 0.0f;
+				g_Config.fUISaturation = 1.0f;
+			}
+			RecreateViews();
+		});
+	}
+
+	themeSettings->Add(new ItemHeader("Ajustes finos"));
+	themeSettings->Add(new TextView("Estos valores los pone el tema; puedes cambiarlos aquí. Se restablecen al elegir otro tema.", FLAG_WRAP_TEXT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(12, 4, 12, 8))));
+
+	static const char *touchControlStyles[] = { "Classic", "Thin borders", "Glowing borders" };
+	themeSettings->Add(new PopupMultiChoice(&g_Config.iTouchButtonStyle, co->T("Button style"), touchControlStyles, 0, ARRAY_SIZE(touchControlStyles), I18NCat::CONTROLS, screenManager()));
+	PopupSliderChoice *opacity = themeSettings->Add(new PopupSliderChoice(&g_Config.iTouchButtonOpacity, 0, 100, 30, co->T("Button Opacity"), screenManager(), "%"));
+	opacity->SetFormat("%i%%");
+
+	auto sy = GetI18NCategory(I18NCat::SYSTEM);
+	static const char *backgroundAnimations[] = { "No animation", "Floating symbols", "Recent games", "Waves", "Moving background", "Bouncing icon", "Colored floating symbols" };
+	themeSettings->Add(new PopupMultiChoice(&g_Config.iBackgroundAnimation, sy->T("UI background animation"), backgroundAnimations, 0, ARRAY_SIZE(backgroundAnimations), I18NCat::SYSTEM, screenManager()));
 }
 
 // TODO: Make this generic
@@ -1247,18 +1323,7 @@ void GameSettingsScreen::CreateSystemSettings(UI::ViewGroup *systemSettings) {
 
 	systemSettings->Add(new PopupMultiChoice(&g_Config.iNotificationPos, sy->T("Notification screen position"), positions, -1, ARRAY_SIZE(positions), I18NCat::DIALOG, screenManager()));
 
-	static const char *backgroundAnimations[] = { "No animation", "Floating symbols", "Recent games", "Waves", "Moving background", "Bouncing icon", "Colored floating symbols" };
-	systemSettings->Add(new PopupMultiChoice(&g_Config.iBackgroundAnimation, sy->T("UI background animation"), backgroundAnimations, 0, ARRAY_SIZE(backgroundAnimations), I18NCat::SYSTEM, screenManager()));
-
-	PopupMultiChoiceDynamic *theme = systemSettings->Add(new PopupMultiChoiceDynamic(&g_Config.sThemeName, sy->T("Theme"), GetThemeInfoNames(), I18NCat::THEMES, screenManager()));
-	theme->OnChoice.Add([](EventParams &e) {
-		UpdateTheme();
-		// Reset the tint/saturation if the theme changed.
-		if (e.b) {
-			g_Config.fUITint = 0.0f;
-			g_Config.fUISaturation = 1.0f;
-		}
-	});
+	// Tryled: theme and background animation moved to the "Temas" tab.
 
 	Draw::DrawContext *draw = screenManager()->getDrawContext();
 

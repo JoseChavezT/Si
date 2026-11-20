@@ -52,6 +52,7 @@
         <meta-data android:name="android.max_aspect" android:value="2.4" />
         <activity
             android:name=".PpssppActivity"
+            android:screenOrientation="sensorLandscape"
             android:configChanges="locale|keyboard|keyboardHidden|navigation|uiMode"
             android:theme="@style/ppsspp_style"
 			android:launchMode="singleInstance"

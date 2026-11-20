@@ -19,6 +19,8 @@
 
 #include <string>
 #include <vector>
+#include <string_view>
+#include <cstdint>
 
 #include "Common/UI/Context.h"
 #include "Common/Render/TextureAtlas.h"
@@ -28,3 +30,14 @@ void ReloadAllThemeInfo();
 std::vector<std::string> GetThemeInfoNames();
 void UpdateTheme();
 const UI::Theme *GetTheme();
+
+// Tryled theme extras.
+std::string GetThemeDescription(std::string_view name);
+uint32_t GetThemeBackgroundColor(std::string_view name);
+uint32_t GetThemeAccentColor(std::string_view name);
+// Returns false if the current theme doesn't set a touch button color. Color is 0x00BBGGRR.
+bool GetThemeTouchButtonColor(uint32_t *color);
+// Color for the symbols drawn on touch buttons, 0x00BBGGRR. White if the theme doesn't set it.
+uint32_t GetThemeTouchIconColor();
+// Copies the current theme's touch control style, opacity and background animation into g_Config.
+void ApplyThemeSettings();
