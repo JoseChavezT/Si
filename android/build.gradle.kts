@@ -206,8 +206,8 @@ android {
 				}
 			}
 			ndk {
-				abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86_64"))
-				// debugSymbolLevel = "FULL"  // These don't actually help much in the Google Play crash report. We do still have symbols locally.
+				// Tryled: only 64-bit ARM (Galaxy S24 Ultra). Smaller APK, faster builds.
+				abiFilters.addAll(listOf("arm64-v8a"))
 			}
 		}
 		create("gold") {
