@@ -224,8 +224,10 @@ private:
 	void OnSaveState(UI::EventParams &e);
 	void OnLoadState(UI::EventParams &e);
 
-	UI::Button *saveStateButton_ = nullptr;
-	UI::Button *loadStateButton_ = nullptr;
+	UI::Choice *saveStateButton_ = nullptr;
+	UI::Choice *loadStateButton_ = nullptr;
+	UI::View *thumb_ = nullptr;
+	bool hasSave_ = false;
 
 	int slot_;
 	std::string saveStatePrefix_;
@@ -248,12 +250,13 @@ SaveSlotView::SaveSlotView(std::string_view saveStatePrefix, int slot, UI::Layou
 		OnSelected.Trigger(e);
 	});
 
-	AsyncImageFileView *fv = Add(new AsyncImageFileView(screenshotFilename_, IS_DEFAULT, new UI::LayoutParams(82 * 2, 47 * 2)));
+	AsyncImageFileView *fv = Add(new AsyncImageFileView(screenshotFilename_, IS_DEFAULT, new LinearLayoutParams(82 * 2, 47 * 2, Margins(0, 0, 12, 0))));
+	thumb_ = fv;
 
 	auto pa = GetI18NCategory(I18NCat::PAUSE);
 	auto sy = GetI18NCategory(I18NCat::SYSTEM);
 
-	LinearLayout *lines = new LinearLayout(ORIENT_VERTICAL, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT));
+	LinearLayout *lines = new LinearLayout(ORIENT_VERTICAL, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, 0.0f, Gravity::G_VCENTER));
 	lines->SetSpacing(2.0f);
 
 	Add(lines);
@@ -263,7 +266,8 @@ SaveSlotView::SaveSlotView(std::string_view saveStatePrefix, int slot, UI::Layou
 
 	lines->Add(buttons);
 
-	saveStateButton_ = buttons->Add(new Button(pa->T("Save State"), new LinearLayoutParams(0.0, Gravity::G_VCENTER)));
+	// Tryled: rounded buttons with icons, like the rest of the pause menu.
+	saveStateButton_ = buttons->Add(new Choice(pa->T("Save State"), ImageID("I_FILE_SAVE"), new LinearLayoutParams(150.0f, 44.0f, 0.0f, Gravity::G_VCENTER)));
 	saveStateButton_->OnClick.Handle(this, &SaveSlotView::OnSaveState);
 
 	fv->OnClick.Add([this](UI::EventParams &e) {
@@ -272,8 +276,9 @@ SaveSlotView::SaveSlotView(std::string_view saveStatePrefix, int slot, UI::Layou
 	});
 
 	if (SaveState::HasSaveInSlot(saveStatePrefix_, slot_)) {
+		hasSave_ = true;
 		if (!Achievements::HardcoreModeActive()) {
-			loadStateButton_ = buttons->Add(new Button(pa->T("Load State"), new LinearLayoutParams(0.0, Gravity::G_VCENTER)));
+			loadStateButton_ = buttons->Add(new Choice(pa->T("Load State"), ImageID("I_FOLDER_OPEN"), new LinearLayoutParams(150.0f, 44.0f, 0.0f, Gravity::G_VCENTER)));
 			loadStateButton_->OnClick.Handle(this, &SaveSlotView::OnLoadState);
 		}
 
@@ -294,9 +299,23 @@ SaveSlotView::SaveSlotView(std::string_view saveStatePrefix, int slot, UI::Layou
 }
 
 void SaveSlotView::Draw(UIContext &dc) {
-	if (g_Config.iCurrentStateSlot == slot_) {
-		dc.FillRect(UI::Drawable(0x70000000), GetBounds().Expand(3));
-		dc.FillRect(UI::Drawable(0x70FFFFFF), GetBounds().Expand(3));
+	// Tryled: each slot is a rounded card; the current slot gets an accent outline.
+	const UI::Theme &t = dc.GetTheme();
+	const float r = std::clamp((float)g_Config.iTryledCornerRadius, 0.0f, 20.0f);
+	const Bounds card = GetBounds().Expand(2.0f);
+	const bool current = g_Config.iCurrentStateSlot == slot_;
+	TryledDraw::FillRoundRect(dc, card, r, current ? colorAlpha(t.itemStyle.fgColor & 0xFFFFFF, 0.10f) : colorAlpha(t.itemStyle.fgColor & 0xFFFFFF, 0.04f));
+	if (current)
+		TryledDraw::StrokeRoundRect(dc, card, r, 2.0f, t.itemFocusedStyle.background.color | 0xFF000000);
+	if (thumb_) {
+		const Bounds tb = thumb_->GetBounds();
+		TryledDraw::FillRoundRect(dc, tb, r * 0.6f, 0x40000000);
+		if (!hasSave_) {
+			dc.SetFontStyle(t.uiFont);
+			dc.SetFontScale(0.7f, 0.7f);
+			dc.DrawText("Vac\u00eda", tb.centerX(), tb.centerY(), colorAlpha(t.itemStyle.fgColor & 0xFFFFFF, 0.45f), ALIGN_CENTER);
+			dc.SetFontScale(1.0f, 1.0f);
+		}
 	}
 	UI::LinearLayout::Draw(dc);
 }

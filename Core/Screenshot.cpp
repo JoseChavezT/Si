@@ -335,6 +335,16 @@ void ScheduleScreenshot(const Path &filename, ScreenshotFormat fmt, ScreenshotTy
 	g_pendingScreenshot.maxRes = maxRes;
 }
 
+// Tryled fix: take the pending request out before calling back. The callback may schedule a new
+// screenshot (savestates retry), which used to overwrite the std::function while it was running
+// and then get wiped right after, crashing.
+static void FailPendingScreenshot() {
+	PendingScreenshot pending = std::move(g_pendingScreenshot);
+	g_pendingScreenshot = {};
+	if (pending.callback)
+		pending.callback(ScreenshotResult::ScreenshotNotPossible);
+}
+
 bool ScreenshotNotifyEndOfFrame(Draw::DrawContext *draw) {
 	if (g_pendingScreenshot.path.empty() || g_pendingScreenshot.type != ScreenshotType::Output) {
 		return false;
@@ -346,16 +356,14 @@ bool ScreenshotNotifyEndOfFrame(Draw::DrawContext *draw) {
 	if (g_display.rotation != DisplayRotation::ROTATE_0) {
 		GPUDebugBuffer temp;
 		if (!::GetOutputFramebuffer(draw, temp)) {
-			g_pendingScreenshot.callback(ScreenshotResult::ScreenshotNotPossible);
-			g_pendingScreenshot = {};
+			FailPendingScreenshot();
 			return false;
 		}
 		_dbg_assert_msg_(temp.IsBackBuffer(), "temp isn't backbuffer??");
 		buf = ApplyRotation(temp, g_display.rotation);
 	} else {
 		if (!::GetOutputFramebuffer(draw, buf)) {
-			g_pendingScreenshot.callback(ScreenshotResult::ScreenshotNotPossible);
-			g_pendingScreenshot = {};
+			FailPendingScreenshot();
 			return false;
 		}
 	}
@@ -376,16 +384,14 @@ bool ScreenshotNotifyPostGameRender(Draw::DrawContext *draw) {
 	GPUDebugBuffer buf;
 	if (!gpuDebug) {
 		ERROR_LOG(Log::System, "Can't take screenshots when GPU not running");
-		g_pendingScreenshot.callback(ScreenshotResult::ScreenshotNotPossible);
-		g_pendingScreenshot = {};
+		FailPendingScreenshot();
 		return false;
 	}
 
 	const int maxRes = g_pendingScreenshot.maxRes;
 
 	if (!gpuDebug->GetCurrentFramebuffer(buf, g_pendingScreenshot.type == ScreenshotType::Render ? GPU_DBG_FRAMEBUF_RENDER : GPU_DBG_FRAMEBUF_DISPLAY, maxRes)) {
-		g_pendingScreenshot.callback(ScreenshotResult::ScreenshotNotPossible);
-		g_pendingScreenshot = {};
+		FailPendingScreenshot();
 		return false;
 	}
 
