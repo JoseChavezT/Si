@@ -87,3 +87,6 @@
 [submodule "ext/tryled-cores/beetle_pce_fast"]
 	path = ext/tryled-cores/beetle_pce_fast
 	url = https://github.com/libretro/beetle-pce-fast-libretro.git
+[submodule "ext/tryled-cores/stella2014"]
+	path = ext/tryled-cores/stella2014
+	url = https://github.com/libretro/stella2014-libretro.git

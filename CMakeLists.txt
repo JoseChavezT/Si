@@ -2942,6 +2942,7 @@ if(ANDROID)
 	tryled_ndk_core(genesis_plus_gx genesis_plus_gx/libretro/jni libretro.so)
 	tryled_ndk_core(pcsx_rearmed pcsx_rearmed/jni libretro.so)
 	tryled_ndk_core(beetle_pce_fast beetle_pce_fast/jni libretro.so)
+	tryled_ndk_core(stella2014 stella2014/jni libretro.so)
 endif()
 
 list(APPEND LinkCommon ${CoreLibName} ${CMAKE_THREAD_LIBS_INIT})

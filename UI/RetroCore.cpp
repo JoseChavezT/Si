@@ -30,6 +30,7 @@ static const RetroCoreInfo g_retroCores[] = {
 	{ "Master System", "libgenesis_plus_gx_libretro.so", "Genesis Plus GX" },
 	{ "Game Gear", "libgenesis_plus_gx_libretro.so", "Genesis Plus GX" },
 	{ "PC Engine", "libbeetle_pce_fast_libretro.so", "Beetle PCE Fast" },
+	{ "Atari 2600", "libstella2014_libretro.so", "Stella" },
 };
 
 const RetroCoreInfo *RetroCoreForConsole(const std::string &console) {

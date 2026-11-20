@@ -589,7 +589,7 @@ std::string ClockString() {
 // console using the file extension. Only PSP games can be played for now.
 // ---------------------------------------------------------------------------
 
-static const char *const g_tryledConsoleOrder[] = { "PSP", "PS1", "GBA", "GB", "SNES", "NES", "Mega Drive", "Master System", "Game Gear", "PC Engine" };
+static const char *const g_tryledConsoleOrder[] = { "PSP", "PS1", "GBA", "GB", "SNES", "NES", "Mega Drive", "Master System", "Game Gear", "PC Engine", "Atari 2600" };
 
 static std::string TryledConsoleOf(const Path &path) {
 	std::string ext = path.GetFileExtension();  // Lowercase, with the dot.
@@ -613,6 +613,8 @@ static std::string TryledConsoleOf(const Path &path) {
 		return "Game Gear";
 	if (ext == ".pce" || ext == ".sgx")
 		return "PC Engine";
+	if (ext == ".a26")
+		return "Atari 2600";
 	return "";
 }
 
