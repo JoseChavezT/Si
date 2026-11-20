@@ -25,6 +25,7 @@ public:
 	// Game input goes straight to the control mapper, like in EmuScreen (otherwise the UI
 	// would swallow the first key press to turn on menu navigation).
 	bool UnsyncKey(const KeyInput &key) override;
+	bool UseTransition() const override { return false; }
 	void touch(const TouchInput &input) override;
 	void UnsyncAxis(const AxisInput *axes, size_t count) override;
 	void dialogFinished(const Screen *dialog, DialogResult result) override;

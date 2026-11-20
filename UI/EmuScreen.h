@@ -80,6 +80,7 @@ protected:
 	void UpdatePSPButtons(uint32_t buttonMask, uint32_t changedMask) override;
 	void SetPSPAnalog(int rotation, int stick, float x, float y) override;
 	ViewLayoutMode LayoutMode() const override;
+	bool UseTransition() const override { return false; }
 
 private:
 	void CreateViews() override;

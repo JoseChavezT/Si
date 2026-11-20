@@ -9,6 +9,10 @@
 #include "Common/UI/UIScreen.h"
 #include "Common/UI/Context.h"
 #include "Common/UI/Screen.h"
+#include "Common/TimeUtil.h"
+
+int UIScreen::s_transitionMode = 0;
+float UIScreen::s_transitionSeconds = 0.22f;
 #include "Common/UI/Root.h"
 #include "Common/Render/DrawBuffer.h"
 
@@ -255,7 +259,28 @@ ScreenRenderFlags UIScreen::render(ScreenRenderMode mode) {
 		UI::LayoutViewHierarchy(uiContext, RootMargins(), root_, LayoutMode(), UseImmersiveMode());
 	}
 
-	uiContext.PushTransform({translation_, scale_, alpha_});
+	// Tryled: enter transition. Only changes the draw transform for a few frames, no extra rendering.
+	Vec3 translation = translation_;
+	Vec3 scale = scale_;
+	float alpha = alpha_;
+	if (UseTransition() && s_transitionMode < 3 && s_transitionSeconds > 0.0f) {
+		const double now = time_now_d();
+		if (enterTime_ < 0.0)
+			enterTime_ = now;
+		const float t = std::clamp((float)((now - enterTime_) / s_transitionSeconds), 0.0f, 1.0f);
+		if (t < 1.0f) {
+			const float e = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);  // Ease out.
+			alpha *= e;
+			if (s_transitionMode == 0) {
+				translation.x += (1.0f - e) * 48.0f;
+			} else if (s_transitionMode == 2) {
+				scale.x *= 0.94f + 0.06f * e;
+				scale.y *= 0.94f + 0.06f * e;
+			}
+		}
+	}
+
+	uiContext.PushTransform({translation, scale, alpha});
 
 	uiContext.Begin();
 	DrawBackground(uiContext);

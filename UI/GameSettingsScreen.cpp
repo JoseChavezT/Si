@@ -669,7 +669,9 @@ void GameSettingsScreen::CreateThemeSettings(UI::ViewGroup *themeSettings) {
 	}
 	case 3: {  // Animaciones
 		static const char *speeds[] = { "Lenta", "Normal", "Rápida", "Sin animación" };
-		themeSettings->Add(new PopupMultiChoice(&g_Config.iTryledAnimSpeed, "Velocidad", speeds, 0, ARRAY_SIZE(speeds), I18NCat::NONE, screenManager()));
+		themeSettings->Add(new PopupMultiChoice(&g_Config.iTryledAnimSpeed, "Velocidad", speeds, 0, ARRAY_SIZE(speeds), I18NCat::NONE, screenManager()))->OnChoice.Add([](EventParams &) { UpdateTheme(); });
+		static const char *transitions[] = { "Deslizar", "Fundido", "Zoom", "Ninguna" };
+		themeSettings->Add(new PopupMultiChoice(&g_Config.iTryledTransition, "Al cambiar de pantalla", transitions, 0, ARRAY_SIZE(transitions), I18NCat::NONE, screenManager()))->OnChoice.Add([](EventParams &) { UpdateTheme(); });
 		static const char *effects[] = { "Crecer", "Brillar", "Flotar" };
 		themeSettings->Add(new PopupMultiChoice(&g_Config.iTryledSelectEffect, "Al elegir un juego", effects, 0, ARRAY_SIZE(effects), I18NCat::NONE, screenManager()));
 		static const char *bgEffects[] = { "Partículas", "Estrellas", "Aurora", "Píxeles", "Ninguno" };
@@ -713,6 +715,8 @@ void GameSettingsScreen::CreateThemeSettings(UI::ViewGroup *themeSettings) {
 		break;
 	}
 	case 5: {  // Inicio
+		static const char *bgTypes[] = { "Imagen del juego", "Degradado", "Color s\u00f3lido" };
+		themeSettings->Add(new PopupMultiChoice(&g_Config.iTryledBgType, "Tipo de fondo", bgTypes, 0, ARRAY_SIZE(bgTypes), I18NCat::NONE, screenManager()));
 		themeSettings->Add(new CheckBox(&g_Config.bTryledShowClock, "Mostrar la hora"));
 		themeSettings->Add(new CheckBox(&g_Config.bTryledArtCard, "Tarjeta con carátula a la derecha"));
 		themeSettings->Add(new CheckBox(&g_Config.bTryledBottomCards, "Tarjetas de abajo (tiempo jugado, guardados, ajustes)"));

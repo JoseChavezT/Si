@@ -439,6 +439,8 @@ public:
 	// Tryled: Personalizar.
 	std::string sTryledThemeColors;  // Per-theme color overrides, see Theme.cpp.
 	std::string sTryledButtonOpacity;
+	int iTryledTransition;   // Screen change: 0 slide, 1 fade, 2 zoom, 3 none.
+	int iTryledBgType;       // Home background: 0 game picture, 1 gradient, 2 solid color.
 	std::string sTryledUiFont;     // Folder in assets/fonts, empty = default font.
 	std::string sTryledTitleFont;  // Same, for big titles; empty = same as the interface.  // Per touch button opacity, "Key=percent;...", see GamepadEmu.cpp.
 	int iTryledTitleScale;      // Home title size, percent.

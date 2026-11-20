@@ -77,6 +77,14 @@ public:
 	virtual void focusChanged(ScreenFocusChange focusChange) override {
 		Screen::focusChanged(focusChange);
 		modifiersPressed_ = Modifier::NONE;
+		if (focusChange == ScreenFocusChange::FOCUS_BECAME_TOP)
+			enterTime_ = -1.0;  // Tryled: start the enter transition on the next frame.
+	}
+
+	// Tryled: how a screen appears when it opens. 0 = slide, 1 = fade, 2 = zoom, 3 = none.
+	static void SetTransition(int mode, float seconds) {
+		s_transitionMode = mode;
+		s_transitionSeconds = seconds;
 	}
 
 protected:
@@ -89,12 +97,17 @@ protected:
 	bool IsOnTop() const;
 	virtual ViewLayoutMode LayoutMode() const { return ViewLayoutMode::ApplyInsets; }
 	virtual bool UseImmersiveMode() const { return false; }
+	// Tryled: games and popups (which animate on their own) don't use the screen transition.
+	virtual bool UseTransition() const { return true; }
 
 	UI::ViewGroup *root_ = nullptr;
 	Vec3 translation_ = Vec3(0.0f);
 	Vec3 scale_ = Vec3(1.0f);
 	float alpha_ = 1.0f;
 	bool ignoreInput_ = false;
+	double enterTime_ = 0.0;
+	static int s_transitionMode;
+	static float s_transitionSeconds;
 
 protected:
 	virtual void DrawBackground(UIContext &ui) {}

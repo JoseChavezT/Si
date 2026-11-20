@@ -28,6 +28,7 @@
 #include "Common/File/VFS/VFS.h"
 #include "Common/Data/Text/I18n.h"
 #include "Common/Render/Text/draw_text.h"
+#include "Common/UI/UIScreen.h"
 #include "Core/Config.h"
 #include "Common/StringUtils.h"
 
@@ -340,6 +341,12 @@ void UpdateTheme() {
 	ui_theme.uiFont = FontStyle(FontFamily::SansSerif, 22, FontStyleFlags::Default);
 	ui_theme.uiFontBig = FontStyle(FontFamily::Title, 28, FontStyleFlags::Bold);
 	SetTryledFonts(g_Config.sTryledUiFont, g_Config.sTryledTitleFont);
+	{
+		// Screen transitions follow the animation speed; "no animation" turns them off.
+		static const float seconds[] = { 0.35f, 0.22f, 0.14f, 0.0f };
+		const int speed = std::clamp(g_Config.iTryledAnimSpeed, 0, 3);
+		UIScreen::SetTransition(speed == 3 ? 3 : g_Config.iTryledTransition, seconds[speed]);
+	}
 	ui_theme.uiFontCode = FontStyle(FontFamily::Fixed, 14, FontStyleFlags::Default);
 
 	ui_theme.checkOn = ImageID("I_CHECKEDBOX");

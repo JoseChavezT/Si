@@ -30,6 +30,9 @@ void TextureRoundRect(UIContext &dc, Draw::Texture *tex, const Bounds &b, float 
 // Ellipse filled with a radial gradient, from colorCenter in the middle to colorEdge at the rim.
 void RadialEllipse(UIContext &dc, float cx, float cy, float rx, float ry, uint32_t colorCenter, uint32_t colorEdge);
 
+// Rectangle with a vertical color gradient, from colorTop to colorBottom.
+void VGradient(UIContext &dc, const Bounds &b, uint32_t colorTop, uint32_t colorBottom);
+
 // Texture coordinates that crop a texture to fill the given aspect ratio (like CSS object-fit: cover).
 void CoverUV(float texAspect, float boxAspect, float *u1, float *v1, float *u2, float *v2);
 

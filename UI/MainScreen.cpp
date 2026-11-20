@@ -1755,7 +1755,18 @@ void MainScreen::OnLoadFile(UI::EventParams &e) {
 void MainScreen::DrawBackground(UIContext &dc) {
 	if (consoleTitle_) {
 		const double now = time_now_d();
-		if (!consoleGames_.empty() && s_tryledSelected < (int)consoleGames_.size() && consoleKinds_[s_tryledSelected] == "PSP") {
+		if (g_Config.iTryledBgType == 1) {
+			// Gradient: a hint of the accent color at the top, fading into the background.
+			const Bounds &gb = dc.GetBounds();
+			const uint32_t tint = PartColor(TryledColor::Glow, ThemeAccent(dc)) & 0xFFFFFF;
+			dc.Flush();
+			dc.RebindTexture();
+			// Smooth vertical gradients (no bands): strong at the top, gone by 70% of the height.
+			const float y1 = gb.y + gb.h * 0.35f, y2 = gb.y + gb.h * 0.7f;
+			TryledDraw::VGradient(dc, Bounds(gb.x, gb.y, gb.w, y1 - gb.y), colorAlpha(tint, 0.30f), colorAlpha(tint, 0.10f));
+			TryledDraw::VGradient(dc, Bounds(gb.x, y1, gb.w, y2 - y1), colorAlpha(tint, 0.10f), colorAlpha(tint, 0.0f));
+		}
+		if (g_Config.iTryledBgType == 0 && !consoleGames_.empty() && s_tryledSelected < (int)consoleGames_.size() && consoleKinds_[s_tryledSelected] == "PSP") {
 			const float fade = EaseOut(float(now - s_consoleArtTime) / 0.5f);
 			// The previous game's art fades out underneath the new one.
 			if (fade < 1.0f && !s_consolePrevArt.empty() && TryledConsoleOf(s_consolePrevArt) == "PSP") {

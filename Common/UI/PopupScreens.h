@@ -46,6 +46,7 @@ public:
 	virtual UI::Margins RootMargins() const override { return UI::Margins(12, 24); }
 
 protected:
+	bool UseTransition() const override { return false; }  // Popups animate on their own.
 	virtual bool FillVertical() const { return false; }
 	virtual UI::Size PopupWidth() const { return 550; }
 	virtual bool ShowButtons() const { return true; }

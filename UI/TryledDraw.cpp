@@ -149,6 +149,18 @@ void RadialEllipse(UIContext &dc, float cx, float cy, float rx, float ry, uint32
 	}
 }
 
+void VGradient(UIContext &dc, const Bounds &b, uint32_t colorTop, uint32_t colorBottom) {
+	float u, v;
+	WhiteUV(dc, &u, &v);
+	DrawBuffer *db = dc.Draw();
+	db->V(b.x, b.y, colorTop, u, v);
+	db->V(b.x2(), b.y, colorTop, u, v);
+	db->V(b.x2(), b.y2(), colorBottom, u, v);
+	db->V(b.x, b.y, colorTop, u, v);
+	db->V(b.x2(), b.y2(), colorBottom, u, v);
+	db->V(b.x, b.y2(), colorBottom, u, v);
+}
+
 void CoverUV(float texAspect, float boxAspect, float *u1, float *v1, float *u2, float *v2) {
 	*u1 = 0.0f;
 	*v1 = 0.0f;
