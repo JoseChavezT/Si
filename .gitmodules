@@ -84,3 +84,6 @@
 [submodule "ext/tryled-cores/pcsx_rearmed"]
 	path = ext/tryled-cores/pcsx_rearmed
 	url = https://github.com/libretro/pcsx_rearmed.git
+[submodule "ext/tryled-cores/beetle_pce_fast"]
+	path = ext/tryled-cores/beetle_pce_fast
+	url = https://github.com/libretro/beetle-pce-fast-libretro.git

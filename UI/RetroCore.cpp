@@ -29,6 +29,7 @@ static const RetroCoreInfo g_retroCores[] = {
 	{ "Mega Drive", "libgenesis_plus_gx_libretro.so", "Genesis Plus GX" },
 	{ "Master System", "libgenesis_plus_gx_libretro.so", "Genesis Plus GX" },
 	{ "Game Gear", "libgenesis_plus_gx_libretro.so", "Genesis Plus GX" },
+	{ "PC Engine", "libbeetle_pce_fast_libretro.so", "Beetle PCE Fast" },
 };
 
 const RetroCoreInfo *RetroCoreForConsole(const std::string &console) {
