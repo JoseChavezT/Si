@@ -1,21 +1,20 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Tryled
 
-# Run and deploy your AI Studio app
+Emulador de PSP personal para Android (Samsung Galaxy S24 Ultra), basado en el
+código abierto de [PPSSPP](https://github.com/hrydgard/ppsspp) con una interfaz
+propia. Se compila desde el código fuente, sin binarios de terceros.
 
-This contains everything you need to run your app locally.
+## Estado
 
-View your app in AI Studio: https://ai.studio/apps/0da53ece-4858-4ec4-94de-8bdd81bc2d23
+Repositorio reiniciado. Próximos pasos:
 
-## Run Locally
+1. Importar el código fuente de PPSSPP (incluidos sus submódulos).
+2. Renombrar la app (nombre, `applicationId`, icono) a Tryled.
+3. Personalizar la interfaz (tema, colores, menú principal).
+4. Ajustar la configuración por defecto para el S24 Ultra (Snapdragon 8 Gen 3, Vulkan).
+5. Compilar el APK con Android Studio / Gradle + NDK.
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+## Licencia
 
-
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
+PPSSPP se distribuye bajo GPL v2 o posterior; Tryled, al ser un derivado,
+hereda esa licencia.
