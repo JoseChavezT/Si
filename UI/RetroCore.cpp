@@ -24,6 +24,7 @@ static const RetroCoreInfo g_retroCores[] = {
 	{ "GBA", "libmgba_libretro.so", "mGBA" },
 	{ "GB", "libmgba_libretro.so", "mGBA" },
 	{ "NES", "libfceumm_libretro.so", "FCEUmm" },
+	{ "SNES", "libsnes9x_libretro.so", "Snes9x" },
 };
 
 const RetroCoreInfo *RetroCoreForConsole(const std::string &console) {

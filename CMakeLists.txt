@@ -2938,6 +2938,7 @@ if(ANDROID)
 		set(TRYLED_NDK "${CMAKE_ANDROID_NDK}")
 	endif()
 	tryled_ndk_core(fceumm fceumm/jni libretro.so)
+	tryled_ndk_core(snes9x snes9x/libretro/jni libretro.so)
 endif()
 
 list(APPEND LinkCommon ${CoreLibName} ${CMAKE_THREAD_LIBS_INIT})

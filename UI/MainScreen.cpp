@@ -601,7 +601,7 @@ static std::string TryledConsoleOf(const Path &path) {
 		return "GBA";
 	if (ext == ".gb" || ext == ".gbc")
 		return "GB";
-	if (ext == ".sfc" || ext == ".smc")
+	if (ext == ".sfc" || ext == ".smc" || ext == ".swc" || ext == ".fig" || ext == ".bs")
 		return "SNES";
 	if (ext == ".nes" || ext == ".fds" || ext == ".unf" || ext == ".unif")
 		return "NES";

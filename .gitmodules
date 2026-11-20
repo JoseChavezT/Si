@@ -75,3 +75,6 @@
 [submodule "ext/tryled-cores/fceumm"]
 	path = ext/tryled-cores/fceumm
 	url = https://github.com/libretro/libretro-fceumm.git
+[submodule "ext/tryled-cores/snes9x"]
+	path = ext/tryled-cores/snes9x
+	url = https://github.com/libretro/snes9x.git
