@@ -603,7 +603,7 @@ static std::string TryledConsoleOf(const Path &path) {
 		return "GB";
 	if (ext == ".sfc" || ext == ".smc")
 		return "SNES";
-	if (ext == ".nes")
+	if (ext == ".nes" || ext == ".fds" || ext == ".unf" || ext == ".unif")
 		return "NES";
 	if (ext == ".md" || ext == ".gen" || ext == ".smd")
 		return "Mega Drive";

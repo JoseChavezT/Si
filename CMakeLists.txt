@@ -2907,6 +2907,39 @@ if(ANDROID AND EXISTS "${CMAKE_SOURCE_DIR}/ext/tryled-cores/mgba/CMakeLists.txt"
 	add_dependencies(${CoreLibName} tryled_core_mgba)
 endif()
 
+# Most libretro cores ship a jni/Android.mk; build those with ndk-build.
+#   name:   our name for it (lib<name>_libretro.so in the APK)
+#   jniDir: folder with Android.mk, relative to ext/tryled-cores
+#   built:  name of the library ndk-build produces (usually libretro.so)
+function(tryled_ndk_core name jniDir built)
+	set(src "${CMAKE_SOURCE_DIR}/ext/tryled-cores/${jniDir}")
+	if(NOT ANDROID OR NOT EXISTS "${src}/Android.mk")
+		return()
+	endif()
+	set(bin "${CMAKE_BINARY_DIR}/tryled-cores/${name}")
+	ExternalProject_Add(tryled_core_${name}
+		SOURCE_DIR "${src}"
+		BINARY_DIR "${bin}"
+		CONFIGURE_COMMAND ""
+		BUILD_COMMAND ${TRYLED_NDK}/ndk-build -C "${src}" NDK_PROJECT_PATH=null NDK_APPLICATION_MK=${src}/Application.mk APP_BUILD_SCRIPT=${src}/Android.mk
+			NDK_OUT=${bin}/obj NDK_LIBS_OUT=${bin}/libs APP_ABI=${ANDROID_ABI} APP_PLATFORM=${ANDROID_PLATFORM} APP_SUPPORT_FLEXIBLE_PAGE_SIZES=true -j4
+		INSTALL_COMMAND ${CMAKE_COMMAND} -E copy ${bin}/libs/${ANDROID_ABI}/${built} ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/lib${name}_libretro.so
+		BUILD_BYPRODUCTS ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/lib${name}_libretro.so
+		BUILD_ALWAYS OFF
+	)
+	add_dependencies(${CoreLibName} tryled_core_${name})
+endfunction()
+
+if(ANDROID)
+	include(ExternalProject)
+	if(ANDROID_NDK)
+		set(TRYLED_NDK "${ANDROID_NDK}")
+	else()
+		set(TRYLED_NDK "${CMAKE_ANDROID_NDK}")
+	endif()
+	tryled_ndk_core(fceumm fceumm/jni libretro.so)
+endif()
+
 list(APPEND LinkCommon ${CoreLibName} ${CMAKE_THREAD_LIBS_INIT})
 
 if(WIN32)

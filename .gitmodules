@@ -72,3 +72,6 @@
 [submodule "ext/tryled-cores/mgba"]
 	path = ext/tryled-cores/mgba
 	url = https://github.com/mgba-emu/mgba.git
+[submodule "ext/tryled-cores/fceumm"]
+	path = ext/tryled-cores/fceumm
+	url = https://github.com/libretro/libretro-fceumm.git

@@ -12,6 +12,8 @@
 
 #include "Common/Log.h"
 #include "Common/File/FileUtil.h"
+#include "Common/File/DirListing.h"
+#include "Core/Util/PathUtil.h"
 #include "Common/File/VFS/VFS.h"
 #include "Common/StringUtils.h"
 #include "Core/System.h"
@@ -21,6 +23,7 @@
 static const RetroCoreInfo g_retroCores[] = {
 	{ "GBA", "libmgba_libretro.so", "mGBA" },
 	{ "GB", "libmgba_libretro.so", "mGBA" },
+	{ "NES", "libfceumm_libretro.so", "FCEUmm" },
 };
 
 const RetroCoreInfo *RetroCoreForConsole(const std::string &console) {
@@ -153,6 +156,22 @@ bool RetroCore::Load(const RetroCoreInfo &info, const Path &game, std::string *e
 	// Content may be behind an Android content:// URI, so we always read it ourselves when the core allows it.
 	retro_game_info gameInfo{};
 	std::string pathStr = game.ToString();
+	if (sysInfo.need_fullpath && game.Type() == PathType::CONTENT_URI) {
+		// This core opens the file itself, and can't open Android content:// URIs.
+		// Give it a copy in the app's cache folder.
+		Path cacheDir = GetSysDirectory(DIRECTORY_APP_CACHE) / "TRYLED";
+		File::CreateFullPath(cacheDir);
+		Path copy = cacheDir / game.GetFilename();
+		File::FileInfo src, dst;
+		if (!File::GetFileInfo(copy, &dst) || !File::GetFileInfo(game, &src) || src.size != dst.size) {
+			if (!File::Copy(game, copy)) {
+				*error = "No se pudo preparar el juego.";
+				Unload();
+				return false;
+			}
+		}
+		pathStr = copy.ToString();
+	}
 	gameInfo.path = pathStr.c_str();
 	if (!sysInfo.need_fullpath) {
 		if (!File::ReadBinaryFileToString(game, &gameData_)) {
