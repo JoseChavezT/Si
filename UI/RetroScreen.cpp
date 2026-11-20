@@ -52,6 +52,7 @@ void RetroScreen::CreateViews() {
 	const Bounds &bounds = GetLayoutBounds(*screenManager()->getUIContext());
 	InitPadLayout(&touch, orientation, bounds.w, bounds.h);
 	root_ = CreatePadLayout(touch, bounds.w, bounds.h, &pauseTrigger_, &g_controlMapper);
+	GamepadTouch();  // Show the controls when the game starts; they fade out later if set to.
 }
 
 void RetroScreen::update() {
@@ -110,6 +111,9 @@ void RetroScreen::UpdateJoypad() {
 	map(CTRL_RIGHT, RETRO_DEVICE_ID_JOYPAD_RIGHT);
 	// The analog stick also works as a d-pad.
 	const float dead = 0.5f;
+	// The stick, from a gamepad, the keyboard or the touch controls.
+	float stickX_, stickY_;
+	GamepadGetRetroAnalog(0, &stickX_, &stickY_);
 	if (stickY_ > dead) pad |= 1u << RETRO_DEVICE_ID_JOYPAD_UP;
 	if (stickY_ < -dead) pad |= 1u << RETRO_DEVICE_ID_JOYPAD_DOWN;
 	if (stickX_ < -dead) pad |= 1u << RETRO_DEVICE_ID_JOYPAD_LEFT;
@@ -122,10 +126,7 @@ void RetroScreen::UpdatePSPButtons(uint32_t buttonMask, uint32_t changedMask) {
 }
 
 void RetroScreen::SetPSPAnalog(int rotation, int stick, float x, float y) {
-	if (stick == 0) {
-		stickX_ = x;
-		stickY_ = y;
-	}
+	GamepadSetRetroAnalog(stick, x, y);
 }
 
 void RetroScreen::OnVKey(VirtKey vkey, bool down) {
@@ -145,6 +146,13 @@ void RetroScreen::OnVKey(VirtKey vkey, bool down) {
 	default:
 		break;
 	}
+}
+
+void RetroScreen::touch(const TouchInput &input) {
+	// Touching the screen brings back the touch controls after they faded out.
+	if (input.flags & TouchInputFlags::DOWN)
+		GamepadTouch();
+	UIScreen::touch(input);
 }
 
 bool RetroScreen::UnsyncKey(const KeyInput &key) {

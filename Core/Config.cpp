@@ -1141,6 +1141,7 @@ static const ConfigSetting themeSettings[] = {
 	ConfigSetting("TryledCornerRadius", SETTING(g_Config, iTryledCornerRadius), 12, CfgFlag::DEFAULT),
 	ConfigSetting("TryledBorderWidth", SETTING(g_Config, iTryledBorderWidth), 0, CfgFlag::DEFAULT),
 	ConfigSetting("TryledThemeColors", SETTING(g_Config, sTryledThemeColors), "", CfgFlag::DEFAULT),
+	ConfigSetting("TryledButtonOpacity", SETTING(g_Config, sTryledButtonOpacity), "", CfgFlag::PER_GAME),
 	ConfigSetting("TryledTitleScale", SETTING(g_Config, iTryledTitleScale), 100, CfgFlag::DEFAULT),
 	ConfigSetting("TryledUpperTitles", SETTING(g_Config, bTryledUpperTitles), false, CfgFlag::DEFAULT),
 	ConfigSetting("TryledTileSize", SETTING(g_Config, iTryledTileSize), 56, CfgFlag::DEFAULT),

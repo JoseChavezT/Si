@@ -18,6 +18,7 @@
 #include <algorithm>
 
 #include "Common/Data/Color/RGBAUtil.h"
+#include "UI/RetroCore.h"
 #include "Common/Data/Text/I18n.h"
 #include "Common/System/Display.h"
 #include "Common/System/System.h"
@@ -41,6 +42,8 @@ static uint32_t usedPointerMask = 0;
 static uint32_t analogPointerMask = 0;
 
 static float g_gamepadOpacity;
+static float g_gamepadFade = 1.0f;    // Tryled: auto-hide multiplier, kept apart for per-button opacity.
+static bool g_gamepadForced = false;  // Tryled: true in the layout editor.
 static double g_lastTouch;
 
 MultiTouchButton *primaryButton[TOUCH_MAX_POINTERS]{};
@@ -49,11 +52,16 @@ std::set<int> g_activeGesturePointers;
 void GamepadUpdateOpacity(float force) {
 	if (force >= 0.0f) {
 		g_gamepadOpacity = force;
+		g_gamepadFade = 1.0f;
+		g_gamepadForced = true;
 		return;
 	}
-	if (coreState == CORE_RUNTIME_ERROR || coreState == CORE_POWERDOWN || coreState == CORE_STEPPING_GE) {
+	g_gamepadForced = false;
+	// Tryled: games of other consoles run with the PSP core powered down, but need the controls.
+	if ((coreState == CORE_RUNTIME_ERROR || coreState == CORE_POWERDOWN || coreState == CORE_STEPPING_GE) && !RetroCore::AnyActive()) {
 		// No need to show the controls.
 		g_gamepadOpacity = 0.0f;
+		g_gamepadFade = 0.0f;
 		return;
 	}
 
@@ -73,6 +81,78 @@ void GamepadUpdateOpacity(float force) {
 	}
 
 	g_gamepadOpacity = opacity * multiplier;
+	g_gamepadFade = multiplier;
+}
+
+std::string TryledButtonGroup(std::string_view key) {
+	if (key == "Circle button" || key == "Cross button" || key == "Triangle button" || key == "Square button")
+		return "Action buttons";
+	return std::string(key);
+}
+
+int TryledButtonOpacity(std::string_view key) {
+	const std::string group = TryledButtonGroup(key) + "=";
+	const std::string &all = g_Config.sTryledButtonOpacity;
+	size_t pos = 0;
+	while (pos < all.size()) {
+		size_t end = all.find(';', pos);
+		if (end == std::string::npos)
+			end = all.size();
+		if (all.compare(pos, group.size(), group) == 0)
+			return std::clamp(atoi(all.c_str() + pos + group.size()), 0, 100);
+		pos = end + 1;
+	}
+	return -1;
+}
+
+void TryledSetButtonOpacity(std::string_view key, int percent) {
+	const std::string group = TryledButtonGroup(key);
+	std::string out;
+	const std::string &all = g_Config.sTryledButtonOpacity;
+	size_t pos = 0;
+	while (pos < all.size()) {
+		size_t end = all.find(';', pos);
+		if (end == std::string::npos)
+			end = all.size();
+		std::string item = all.substr(pos, end - pos);
+		if (!item.empty() && item.compare(0, group.size() + 1, group + "=") != 0)
+			out += item + ";";
+		pos = end + 1;
+	}
+	if (percent >= 0)
+		out += group + "=" + std::to_string(std::clamp(percent, 0, 100)) + ";";
+	g_Config.sTryledButtonOpacity = out;
+}
+
+static float g_retroAnalog[2][2]{};
+
+// Stick input from the touch controls: to the PSP, or to the running game of another console.
+static void TouchSetAnalogXY(int stick, float x, float y) {
+	if (RetroCore::AnyActive())
+		GamepadSetRetroAnalog(stick, x, y);
+	else
+		__CtrlSetAnalogXY(stick, x, y);
+}
+
+void GamepadGetRetroAnalog(int stick, float *x, float *y) {
+	*x = stick >= 0 && stick < 2 ? g_retroAnalog[stick][0] : 0.0f;
+	*y = stick >= 0 && stick < 2 ? g_retroAnalog[stick][1] : 0.0f;
+}
+
+void GamepadSetRetroAnalog(int stick, float x, float y) {
+	if (stick >= 0 && stick < 2) {
+		g_retroAnalog[stick][0] = x;
+		g_retroAnalog[stick][1] = y;
+	}
+}
+
+float GamepadComponentOpacity(std::string_view key) {
+	const int percent = TryledButtonOpacity(key);
+	if (percent < 0)
+		return g_gamepadOpacity;
+	if (g_gamepadForced)
+		return std::max(0.15f, percent / 100.0f);  // Keep hidden-looking buttons findable in the editor.
+	return percent / 100.0f * g_gamepadFade;
 }
 
 void GamepadResetTouch() {
@@ -176,7 +256,7 @@ bool MultiTouchButton::Touch(const TouchInput &input) {
 }
 
 void MultiTouchButton::Draw(UIContext &dc) {
-	float opacity = std::max(g_gamepadOpacity, minimumAlpha_);
+	float opacity = std::max(GamepadComponentOpacity(key_), minimumAlpha_);
 	if (opacity <= 0.0f)
 		return;
 
@@ -448,7 +528,7 @@ void PSPDpad::ProcessTouch(float x, float y, bool down, bool ignorePress) {
 }
 
 void PSPDpad::Draw(UIContext &dc) {
-	float opacity = g_gamepadOpacity;
+	float opacity = GamepadComponentOpacity(key_);
 	if (opacity <= 0.0f)
 		return;
 	// from control mapper.cpp
@@ -510,7 +590,7 @@ void PSPStick::GetContentDimensions(const UIContext &dc, float &w, float &h) con
 }
 
 void PSPStick::Draw(UIContext &dc) {
-	float opacity = g_gamepadOpacity;
+	float opacity = GamepadComponentOpacity(key_);
 	if (opacity <= 0.0f)
 		return;
 
@@ -530,7 +610,12 @@ void PSPStick::Draw(UIContext &dc) {
 	float stickY = centerY_;
 
 	float dx, dy;
-	__CtrlPeekAnalog(stick_, &dx, &dy);
+	if (RetroCore::AnyActive() && stick_ >= 0 && stick_ < 2) {
+		dx = g_retroAnalog[stick_][0];
+		dy = g_retroAnalog[stick_][1];
+	} else {
+		__CtrlPeekAnalog(stick_, &dx, &dy);
+	}
 	rotateTouchHelper(dx, dy);
 
 	const TouchControlConfig &config = g_Config.GetTouchControlsConfig(g_display.GetDeviceOrientation());
@@ -549,7 +634,7 @@ bool PSPStick::Touch(const TouchInput &input) {
 		dragPointerId_ = -1;
 		centerX_ = bounds_.centerX();
 		centerY_ = bounds_.centerY();
-		__CtrlSetAnalogXY(stick_, 0.0f, 0.0f);
+		TouchSetAnalogXY(stick_, 0.0f, 0.0f);
 		usedPointerMask = 0;
 		analogPointerMask = 0;
 		return retval;
@@ -612,9 +697,9 @@ void PSPStick::ProcessTouch(float x, float y, bool down) {
 		dx = std::min(1.0f, std::max(-1.0f, dx));
 		dy = std::min(1.0f, std::max(-1.0f, dy));
 
-		__CtrlSetAnalogXY(stick_, dx, -dy);
+		TouchSetAnalogXY(stick_, dx, -dy);
 	} else {
-		__CtrlSetAnalogXY(stick_, 0.0f, 0.0f);
+		TouchSetAnalogXY(stick_, 0.0f, 0.0f);
 	}
 }
 
@@ -623,7 +708,7 @@ PSPCustomStick::PSPCustomStick(ImageID bgImg, const char *key, ImageID stickImg,
 }
 
 void PSPCustomStick::Draw(UIContext &dc) {
-	float opacity = g_gamepadOpacity;
+	float opacity = GamepadComponentOpacity(key_);
 	if (opacity <= 0.0f)
 		return;
 
@@ -1203,7 +1288,7 @@ bool GestureGamepad::Touch(const TouchInput &input) {
 				float dy = (input.y - downY_) * g_display.dpi_scale_y * k;
 				dx = std::clamp(dx, -1.0f, 1.0f);
 				dy = std::clamp(dy, -1.0f, 1.0f);
-				__CtrlSetAnalogXY(0, dx, -dy);
+				TouchSetAnalogXY(0, dx, -dy);
 			}
 		}
 	}
@@ -1221,7 +1306,7 @@ bool GestureGamepad::Touch(const TouchInput &input) {
 			}
 
 			if (zone.bAnalogGesture)
-				__CtrlSetAnalogXY(0, 0, 0);
+				TouchSetAnalogXY(0, 0, 0);
 		}
 	}
 	return true;

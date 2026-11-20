@@ -40,6 +40,7 @@ protected:
 	ViewLayoutMode LayoutMode() const override { return ViewLayoutMode::ApplyInsets; }
 	void OnReset(UI::EventParams &e);
 	void OnMode(UI::EventParams &e);
+	void CreateButtonPanel(UI::ViewGroup *panel, DeviceOrientation orientation);
 
 private:
 	UI::ChoiceStrip *mode_ = nullptr;
@@ -47,5 +48,8 @@ private:
 	UI::TextView *hint_ = nullptr;
 	UI::View *topPanel_ = nullptr;
 	UI::View *bottomPanel_ = nullptr;
-	int editMode_ = 0;  // 0 = move, 1 = resize. Kept across RecreateViews().
+	int editMode_ = 0;
+	std::string selectedKey_;  // Tryled: the button being edited on its own, empty for none.
+	int buttonOpacity_ = 0;
+	int buttonSize_ = 100;  // 0 = move, 1 = resize. Kept across RecreateViews().
 };

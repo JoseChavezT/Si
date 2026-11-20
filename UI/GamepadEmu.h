@@ -47,6 +47,7 @@ public:
 		return false;
 	}
 	bool CanBeFocused() const override { return false; }
+	const std::string &Key() const { return key_; }
 
 protected:
 	std::string key_;
@@ -415,4 +416,15 @@ namespace GestureKey {
 void GamepadTouch();
 void GamepadResetTouch();
 void GamepadUpdateOpacity(float force = -1.0f);
+
+// Tryled: opacity per touch button. Keys are the control keys ("D-pad", "Start button"...);
+// the four face buttons share "Action buttons". Returns -1 when the button uses the general opacity.
+std::string TryledButtonGroup(std::string_view key);
+int TryledButtonOpacity(std::string_view key);
+void TryledSetButtonOpacity(std::string_view key, int percent);  // percent < 0: use the general opacity.
+// The opacity to draw a control with, including auto-hide.
+float GamepadComponentOpacity(std::string_view key);
+// Tryled: stick position while a game of another console runs (the PSP core is off then).
+void GamepadSetRetroAnalog(int stick, float x, float y);
+void GamepadGetRetroAnalog(int stick, float *x, float *y);
 float GamepadGetOpacity();

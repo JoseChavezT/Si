@@ -16,6 +16,8 @@
 // https://github.com/hrydgard/ppsspp and http://www.ppsspp.org/.
 
 #include <algorithm>
+#include <cstdio>
+#include <functional>
 #include <vector>
 
 #include "Common/Data/Color/RGBAUtil.h"
@@ -28,6 +30,7 @@
 
 #include "Common/CommonTypes.h"
 #include "Common/Log.h"
+#include "Common/StringUtils.h"
 #include "Core/Config.h"
 #include "Core/System.h"
 #include "GPU/Common/PresentationCommon.h"
@@ -37,6 +40,11 @@
 #include "UI/TryledDraw.h"
 
 static float layoutAreaScale = 1.0f;
+
+namespace {
+std::string ButtonName(const std::string &key);
+ConfigTouchPos *ButtonPos(TouchControlConfig &t, const std::string &key);
+}
 
 static u32 GetButtonColor() {
 	return g_Config.iTouchButtonStyle != 0 ? 0xFFFFFF : 0xc0b080;
@@ -116,7 +124,7 @@ public:
 
 	void Draw(UIContext &dc) override {
 		scale_ = theScale_*layoutAreaScale;
-		float opacity = GamepadGetOpacity();
+		float opacity = GamepadComponentOpacity(key_);
 		uint32_t colorBg = colorAlpha(GetButtonColor(), opacity);
 		uint32_t color = colorAlpha(0xFFFFFF, opacity);
 
@@ -245,7 +253,7 @@ public:
 
 	void Draw(UIContext &dc) override {
 		scale_ = theScale_*layoutAreaScale;
-		float opacity = GamepadGetOpacity();
+		float opacity = GamepadComponentOpacity(key_);
 		uint32_t colorBg = colorAlpha(GetButtonColor(), opacity);
 		uint32_t color = colorAlpha(0xFFFFFF, opacity);
 
@@ -290,7 +298,7 @@ public:
 	void Draw(UIContext &dc) override {
 		scale_ = theScale_ * layoutAreaScale;
 
-		float opacity = GamepadGetOpacity();
+		float opacity = GamepadComponentOpacity(key_);
 		uint32_t colorBg = colorAlpha(GetButtonColor(), opacity);
 
 		const ImageID stickImage = g_Config.iTouchButtonStyle ? ImageID("I_STICK_LINE") : ImageID("I_STICK");
@@ -364,6 +372,10 @@ public:
 
 	int mode_ = 0;
 	bool Dragging() const { return pickedControl_ != nullptr; }
+
+	// Tryled: a tap (touch without moving) selects a button to edit on its own.
+	std::function<void(const std::string &key)> onTap;
+	std::string selectedKey;
 
 private:
 	DragDropButton *getPickedControl(const int x, const int y);
@@ -452,8 +464,12 @@ bool ControlLayoutView::Touch(const TouchInput &touch) {
 		}
 	}
 	if ((touch.flags & TouchInputFlags::UP) && pickedControl_ != 0) {
+		const bool tap = fabsf(touch.x - startDragX_) < 8.0f && fabsf(touch.y - startDragY_) < 8.0f;
 		pickedControl_->SavePosition();
+		const std::string key = pickedControl_->Key();
 		pickedControl_ = 0;
+		if (tap && onTap)
+			onTap(key);
 	}
 	return true;
 }
@@ -465,6 +481,15 @@ void ControlLayoutView::Draw(UIContext& dc) {
 	dc.FillRect(Drawable(0x80000000), bounds_);
 	dc.Flush();
 	UI::AnchorLayout::Draw(dc);
+	// Tryled: frame around the selected button.
+	if (!selectedKey.empty()) {
+		for (DragDropButton *c : controls_) {
+			if (c->Key() == selectedKey) {
+				const Bounds b = c->GetBounds().Expand(8.0f);
+				TryledDraw::StrokeRoundRect(dc, b, 12.0f, 2.0f, dc.GetTheme().itemFocusedStyle.background.color | 0xFF000000);
+			}
+		}
+	}
 }
 
 void ControlLayoutView::CreateViews() {
@@ -546,7 +571,7 @@ void ControlLayoutView::CreateViews() {
 		}
 
 		char temp[64];
-		snprintf(temp, sizeof(temp), "Custom %d button", i);
+		snprintf(temp, sizeof(temp), "Custom %d button", i + 1);
 		addDragCustomKey(touch.touchCustom[i], temp, g_Config.CustomButton[i]);
 	}
 
@@ -579,6 +604,61 @@ DragDropButton *ControlLayoutView::getPickedControl(const int x, const int y) {
 	}
 
 	return bestMatch;
+}
+
+void TouchControlLayoutScreen::CreateButtonPanel(UI::ViewGroup *panel, DeviceOrientation orientation) {
+	using namespace UI;
+	TouchControlConfig &touch = g_Config.GetTouchControlsConfig(orientation);
+	ConfigTouchPos *pos = ButtonPos(touch, selectedKey_);
+	const float rowH = 40.0f;
+
+	TextView *title = panel->Add(new TextView(ButtonName(selectedKey_), ALIGN_LEFT, false, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(14, 10, 14, 4))));
+	title->SetBig(true);
+
+	auto sliderRow = [&](const char *label, int *value, int minV, int maxV, int step) {
+		LinearLayout *r = panel->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(FILL_PARENT, rowH, Margins(14, 0, 26, 0))));
+		r->Add(new TextView(label, ALIGN_VCENTER, false, new LinearLayoutParams(110.0f, FILL_PARENT)));
+		Slider *s = r->Add(new Slider(value, minV, maxV, step, new LinearLayoutParams(0.0f, FILL_PARENT, 1.0f)));
+		s->SetShowPercent(true);
+		return s;
+	};
+
+	const int own = TryledButtonOpacity(selectedKey_);
+	buttonOpacity_ = own >= 0 ? own : g_Config.iTouchButtonOpacity;
+	Slider *opacitySlider = sliderRow("Opacidad", &buttonOpacity_, 0, 100, 5);
+	if (pos) {
+		buttonSize_ = (int)(pos->scale * 100.0f + 0.5f);
+		sliderRow("Tama\u00f1o", &buttonSize_, 50, 300, 5)->OnChange.Add([this, pos](EventParams &) {
+			pos->scale = buttonSize_ / 100.0f;
+			RecreateViews();
+		});
+	}
+
+	LinearLayout *r = panel->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(8, 4, 8, 0))));
+	r->SetSpacing(4.0f);
+	Choice *same = r->Add(new Choice("Restaurar", new LinearLayoutParams(0.0f, rowH, 1.0f)));
+	same->SetEnabled(own >= 0);
+	opacitySlider->OnChange.Add([this, same](EventParams &) {
+		TryledSetButtonOpacity(selectedKey_, buttonOpacity_);
+		same->SetEnabled(true);
+	});
+	same->OnClick.Add([this](EventParams &) {
+		TryledSetButtonOpacity(selectedKey_, -1);
+		RecreateViews();
+	});
+	r->Add(new Choice("Ocultar", new LinearLayoutParams(0.0f, rowH, 1.0f)))->OnClick.Add([this, &touch, pos](EventParams &) {
+		if (selectedKey_ == "Action buttons") {
+			touch.bShowTouchCircle = touch.bShowTouchCross = touch.bShowTouchTriangle = touch.bShowTouchSquare = false;
+		} else if (pos) {
+			pos->show = false;
+		}
+		selectedKey_.clear();
+		RecreateViews();
+	});
+	panel->Add(new TryledPrimaryChoice("Listo", ImageID::invalid(), new LinearLayoutParams(FILL_PARENT, rowH, Margins(10, 6, 10, 10))))->OnClick.Add([this](EventParams &) {
+		selectedKey_.clear();
+		RecreateViews();
+	});
 }
 
 void TouchControlLayoutScreen::resized() {
@@ -666,8 +746,44 @@ public:
 	}
 };
 
+// Friendly name of a touch control, by its key.
+std::string ButtonName(const std::string &key) {
+	static const std::pair<const char *, const char *> names[] = {
+		{ "Action buttons", "Botones de acci\u00f3n" }, { "D-pad", "Cruceta" }, { "Pause button", "Bot\u00f3n de men\u00fa" },
+		{ "Select button", "Select" }, { "Start button", "Start" }, { "Fast-forward button", "Avance r\u00e1pido" },
+		{ "Left shoulder button", "L" }, { "Right shoulder button", "R" }, { "Left analog stick", "Joystick izquierdo" },
+		{ "Right analog stick", "Joystick derecho" },
+	};
+	for (auto &n : names) {
+		if (key == n.first)
+			return n.second;
+	}
+	int num = 0;
+	if (sscanf(key.c_str(), "Custom %d button", &num) == 1)
+		return StringFromFormat("Combinado %d", num);
+	return key;
+}
+
+// The saved position/size of a touch control, by its key.
+ConfigTouchPos *ButtonPos(TouchControlConfig &t, const std::string &key) {
+	if (key == "Action buttons") return &t.touchActionButtonCenter;
+	if (key == "D-pad") return &t.touchDpad;
+	if (key == "Pause button") return &t.touchPauseKey;
+	if (key == "Select button") return &t.touchSelectKey;
+	if (key == "Start button") return &t.touchStartKey;
+	if (key == "Fast-forward button") return &t.touchFastForwardKey;
+	if (key == "Left shoulder button") return &t.touchLKey;
+	if (key == "Right shoulder button") return &t.touchRKey;
+	if (key == "Left analog stick") return &t.touchAnalogStick;
+	if (key == "Right analog stick") return &t.touchRightAnalogStick;
+	int num = 0;
+	if (sscanf(key.c_str(), "Custom %d button", &num) == 1 && num >= 1 && num <= TouchControlConfig::CUSTOM_BUTTON_COUNT)
+		return &t.touchCustom[num - 1];
+	return nullptr;
+}
+
 static std::string HintText(int mode) {
-	return mode == 0 ? "Arrastra un bot\u00f3n para moverlo." : "Arrastra hacia arriba: m\u00e1s grande. A los lados: m\u00e1s separado.";
+	return mode == 0 ? "Arrastra un bot\u00f3n para moverlo. T\u00f3calo para editarlo." : "Arrastra hacia arriba: m\u00e1s grande. A los lados: m\u00e1s separado.";
 }
 
 }  // namespace
@@ -698,6 +814,17 @@ void TouchControlLayoutScreen::CreateViews() {
 	};
 	const float rowH = 40.0f;
 	auto half = [&]() { return new LinearLayoutParams(0.0f, rowH, 1.0f); };
+
+	layoutView_->selectedKey = selectedKey_;
+	layoutView_->onTap = [this](const std::string &key) {
+		selectedKey_ = key;
+		RecreateViews();
+	};
+	if (!selectedKey_.empty()) {
+		CreateButtonPanel(panel, orientation);
+		topPanel_ = panel;
+		return;
+	}
 
 	hint_ = panel->Add(new TextView(HintText(editMode_), ALIGN_HCENTER | FLAG_WRAP_TEXT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(10, 8, 10, 2))));
 	hint_->SetTextColor(0xB0FFFFFF);

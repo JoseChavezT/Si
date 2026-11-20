@@ -25,6 +25,7 @@ public:
 	// Game input goes straight to the control mapper, like in EmuScreen (otherwise the UI
 	// would swallow the first key press to turn on menu navigation).
 	bool UnsyncKey(const KeyInput &key) override;
+	void touch(const TouchInput &input) override;
 	void UnsyncAxis(const AxisInput *axes, size_t count) override;
 	void dialogFinished(const Screen *dialog, DialogResult result) override;
 
@@ -56,7 +57,6 @@ private:
 	bool closing_ = false;  // Set from the pause menu; acted on once the menu has closed.
 
 	uint32_t pspButtons_ = 0;
-	float stickX_ = 0.0f, stickY_ = 0.0f;
 
 	std::vector<uint32_t> frame_;
 	int frameW_ = 0, frameH_ = 0;

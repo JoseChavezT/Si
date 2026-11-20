@@ -71,6 +71,11 @@ static RetroCore *g_activeCore = nullptr;
 // Guards g_activeCore against the audio thread while a core is loaded or unloaded.
 static std::mutex g_activeLock;
 
+bool RetroCore::AnyActive() {
+	std::lock_guard<std::mutex> guard(g_activeLock);
+	return g_activeCore != nullptr;
+}
+
 void RetroCore::MixActive(int16_t *out, int frames, int outRate) {
 	std::lock_guard<std::mutex> guard(g_activeLock);
 	if (g_activeCore && g_activeCore->handle_)

@@ -53,6 +53,9 @@ public:
 	// Mixes the running core's audio, if any (called from the audio thread).
 	static void MixActive(int16_t *out, int frames, int outRate);
 
+	// True while a game of another console is running (the PSP core is then powered down).
+	static bool AnyActive();
+
 private:
 	void LoadSRAM();
 	Path StatePath(int slot) const;
