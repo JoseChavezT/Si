@@ -438,7 +438,9 @@ public:
 	int iTryledBorderWidth;   // Tryled: border around tiles and cards (0 = none).
 	// Tryled: Personalizar.
 	std::string sTryledThemeColors;  // Per-theme color overrides, see Theme.cpp.
-	std::string sTryledButtonOpacity;  // Per touch button opacity, "Key=percent;...", see GamepadEmu.cpp.
+	std::string sTryledButtonOpacity;
+	std::string sTryledUiFont;     // Folder in assets/fonts, empty = default font.
+	std::string sTryledTitleFont;  // Same, for big titles; empty = same as the interface.  // Per touch button opacity, "Key=percent;...", see GamepadEmu.cpp.
 	int iTryledTitleScale;      // Home title size, percent.
 	bool bTryledUpperTitles;
 	int iTryledTileSize;        // Home tile size, UI pixels.

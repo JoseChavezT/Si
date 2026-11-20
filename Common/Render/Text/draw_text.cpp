@@ -326,7 +326,34 @@ std::vector<std::string> GetAllFontFilenames() {
 	return vec;
 }
 
-std::string GetFilenameForFontStyle(const FontStyle &font) {
+static std::string g_tryledUiFont;
+static std::string g_tryledTitleFont;
+
+void SetTryledFonts(std::string_view uiFont, std::string_view titleFont) {
+	g_tryledUiFont = std::string(uiFont);
+	g_tryledTitleFont = std::string(titleFont);
+}
+
+static std::string TryledFontFile(const std::string &name, FontStyleFlags flags) {
+	const char *variant = "Regular";
+	if (name != "pixel") {  // The pixel font only has one weight.
+		if (flags & FontStyleFlags::Bold)
+			variant = "Bold";
+		else if (flags & FontStyleFlags::Light)
+			variant = "Light";
+	}
+	return "fonts/" + name + "/" + variant;
+}
+
+std::string GetFilenameForFontStyle(const FontStyle &fontIn) {
+	FontStyle font = fontIn;
+	if (font.family == FontFamily::Title) {
+		if (!g_tryledTitleFont.empty())
+			return TryledFontFile(g_tryledTitleFont, font.flags);
+		font.family = FontFamily::SansSerif;
+	}
+	if (font.family == FontFamily::SansSerif && !g_tryledUiFont.empty())
+		return TryledFontFile(g_tryledUiFont, font.flags);
 	for (const auto &desc : g_fontDescs) {
 		if (desc.flags == font.flags && desc.family == font.family) {
 			return std::string(desc.filename);
@@ -344,7 +371,10 @@ std::string GetFilenameForFontStyle(const FontStyle &font) {
 	return "";
 }
 
-std::string GetFontNameForFontStyle(const FontStyle &font, FontStyleFlags *outFlags) {
+std::string GetFontNameForFontStyle(const FontStyle &fontIn, FontStyleFlags *outFlags) {
+	FontStyle font = fontIn;
+	if (font.family == FontFamily::Title)
+		font.family = FontFamily::SansSerif;
 	auto override = g_fontOverrides.find(font.family);
 	if (override != g_fontOverrides.end()) {
 		*outFlags = font.flags;

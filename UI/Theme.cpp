@@ -338,7 +338,8 @@ void UpdateTheme() {
 	ui_theme.uiFontTiny = FontStyle(FontFamily::SansSerif, 14, FontStyleFlags::Default);
 	ui_theme.uiFontSmall = FontStyle(FontFamily::SansSerif, 17, FontStyleFlags::Default);
 	ui_theme.uiFont = FontStyle(FontFamily::SansSerif, 22, FontStyleFlags::Default);
-	ui_theme.uiFontBig = FontStyle(FontFamily::SansSerif, 28, FontStyleFlags::Bold);
+	ui_theme.uiFontBig = FontStyle(FontFamily::Title, 28, FontStyleFlags::Bold);
+	SetTryledFonts(g_Config.sTryledUiFont, g_Config.sTryledTitleFont);
 	ui_theme.uiFontCode = FontStyle(FontFamily::Fixed, 14, FontStyleFlags::Default);
 
 	ui_theme.checkOn = ImageID("I_CHECKEDBOX");

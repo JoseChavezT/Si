@@ -2971,6 +2971,7 @@ set(NativeAssets
 	assets/shaders
 	assets/themes
 	assets/sounds
+	assets/fonts
 	assets/vfpu
 	assets/Roboto_Condensed-Regular.ttf
 	assets/Roboto_Condensed-Light.ttf

@@ -29,6 +29,7 @@
 #include "Common/UI/View.h"
 #include "Common/UI/ViewGroup.h"
 #include "Common/UI/Context.h"
+#include "Common/Render/Text/draw_text.h"
 #include "Common/UI/Notice.h"
 #include "Common/Render/ManagedTexture.h"
 #include "Common/VR/PPSSPPVR.h"
@@ -619,6 +620,28 @@ void GameSettingsScreen::CreateThemeSettings(UI::ViewGroup *themeSettings) {
 	}
 	case 2: {  // Letra y forma
 		themeSettings->Add(new ItemHeader("Letra"));
+		{
+			// Fonts bundled in assets/fonts (open fonts, OFL license).
+			UIContext *uiCtx = screenManager()->getUIContext();
+			auto fontRow = [&](const char *label, std::string *value, const std::vector<std::pair<const char *, const char *>> &options) {
+				themeSettings->Add(new TextView(label, ALIGN_LEFT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(12, 6, 12, 0))));
+				LinearLayout *row = themeSettings->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(12, 2, 12, 6))));
+				row->SetSpacing(6.0f);
+				for (const auto &opt : options) {
+					const std::string folder = opt.second;
+					TryledChip *chip = row->Add(new TryledChip(opt.first, *value == folder));
+					chip->OnClick.Add([this, uiCtx, value, folder](EventParams &) {
+						*value = folder;
+						SetTryledFonts(g_Config.sTryledUiFont, g_Config.sTryledTitleFont);
+						if (uiCtx->Text())  // No text drawer on builds that only have the bitmap font.
+							uiCtx->Text()->ReloadFonts();
+						RecreateViews();
+					});
+				}
+			};
+			fontRow("Letra de la interfaz", &g_Config.sTryledUiFont, { { "Sistema", "" }, { "Inter", "inter" }, { "Rubik", "rubik" }, { "Nunito", "nunito" } });
+			fontRow("Letra de los títulos", &g_Config.sTryledTitleFont, { { "Igual", "" }, { "Space Grotesk", "spacegrotesk" }, { "Rubik", "rubik" }, { "Orbitron", "orbitron" }, { "Píxel", "pixel" } });
+		}
 		PopupSliderChoice *uiScale = themeSettings->Add(new PopupSliderChoice(&g_Config.iUIScaleFactor, -8, 8, 0, "Tamaño de la interfaz", screenManager()));
 		uiScale->SetZeroLabel("Normal");
 		UIContext *ctx = screenManager()->getUIContext();

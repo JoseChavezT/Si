@@ -74,6 +74,12 @@ public:
 	}
 	size_t GetCacheDataSize() const;
 
+	// Tryled: drop loaded fonts and cached text, after the chosen fonts change.
+	void ReloadFonts() {
+		ClearFonts();
+		ClearCache();
+	}
+
 protected:
 	TextDrawer(Draw::DrawContext *draw);
 
@@ -152,3 +158,7 @@ std::string GetFontNameForFontStyle(const FontStyle &font, FontStyleFlags *outFl
 
 // Some languages use an override font, set via ini file.
 void SetFontNameOverride(FontFamily family, std::string_view overrideFont);
+
+// Tryled: fonts bundled in assets/fonts/<name>/ (Regular, Bold, Light). Empty = the default font.
+// The title font applies to FontFamily::Title and falls back to the interface font.
+void SetTryledFonts(std::string_view uiFont, std::string_view titleFont);

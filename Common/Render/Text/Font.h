@@ -22,6 +22,7 @@ ENUM_CLASS_BITOPS(FontStyleFlags);
 enum class FontFamily : u8 {
 	SansSerif = 1,
 	Fixed = 2,
+	Title = 3,  // Tryled: big titles. Same as SansSerif unless a title font is chosen.
 };
 
 struct FontStyle {
