@@ -49,6 +49,7 @@ enum class UISound {
 	TOGGLE_OFF,
 	ACHIEVEMENT_UNLOCKED,
 	LEADERBOARD_SUBMITTED,
+	STARTUP,  // Tryled: played once when the app opens.
 	COUNT,
 };
 

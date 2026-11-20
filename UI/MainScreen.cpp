@@ -311,7 +311,19 @@ void MainScreen::CreateMainButtons(UI::ViewGroup *parent, bool portrait) {
 // "Biblioteca" switches to the classic PPSSPP file browser.
 // ============================================================================
 
+// Animation clocks (time_now_d() based).
+static double s_consoleOpenTime = 0.0;    // When the console home was (re)created: intro animation.
+static double s_consoleSelectTime = 0.0;  // When the selected game changed: title slide-in.
+static double s_consoleArtTime = 0.0;     // When the background art changed: crossfade.
+static Path s_consolePrevArt;             // Art fading out.
+static bool s_startupSoundPlayed = false;
+
 namespace {
+
+float EaseOut(float t) {
+	t = std::clamp(t, 0.0f, 1.0f);
+	return 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
+}
 
 uint32_t ThemeAccent(const UIContext &dc) {
 	return dc.GetTheme().itemFocusedStyle.background.color;
@@ -342,18 +354,33 @@ public:
 	void Draw(UIContext &dc) override {
 		const bool selected = isSelected_ && isSelected_(index_);
 		const uint32_t accent = ThemeAccent(dc);
-		Bounds b = bounds_;
 
-		if (selected) {
-			dc.FillRect(UI::Drawable(accent), b.Expand(4.0f));
+		// Smoothly grow the selected tile, shrink the others.
+		const double now = time_now_d();
+		const float dt = lastDraw_ > 0.0 ? (float)std::min(now - lastDraw_, 0.1) : 1.0f;
+		lastDraw_ = now;
+		grow_ += ((selected ? 1.0f : 0.0f) - grow_) * std::min(1.0f, dt * 14.0f);
+
+		// Intro: tiles drop in one after another when the screen opens.
+		const float intro = EaseOut(float(now - s_consoleOpenTime - index_ * 0.04) / 0.45f);
+		Bounds b = bounds_.Expand(grow_ * 9.0f);
+		b.y -= (1.0f - intro) * 30.0f;
+		const float alpha = intro;
+
+		if (grow_ > 0.01f) {
+			// Frame with a soft pulsing glow.
+			const float pulse = 0.75f + 0.25f * sinf((float)now * 3.0f);
+			dc.Draw()->DrawImage4Grid(dc.GetTheme().dropShadow4Grid, b.x - 14, b.y - 14, b.x2() + 14, b.y2() + 14, colorAlpha(accent & 0xFFFFFF, 0.55f * grow_ * pulse * alpha), 1.0f);
+			dc.FillRect(UI::Drawable(colorAlpha(accent & 0xFFFFFF, grow_ * alpha)), b.Expand(4.0f));
 			dc.FillRect(UI::Drawable(dc.GetTheme().backgroundColor | 0xFF000000), b.Expand(1.5f));
 		}
-		dc.FillRect(UI::Drawable(dc.GetTheme().itemStyle.background.color | 0xFF000000), b);
+		dc.FillRect(UI::Drawable(colorAlpha(dc.GetTheme().itemStyle.background.color & 0xFFFFFF, alpha)), b);
 
 		std::shared_ptr<GameInfo> ginfo = g_gameInfoCache->GetInfo(dc.GetDrawContext(), path_, GameInfoFlags::ICON | GameInfoFlags::PARAM_SFO);
 		Draw::Texture *texture = (ginfo->Ready(GameInfoFlags::ICON) && ginfo->icon.texture) ? ginfo->icon.texture : nullptr;
 		if (texture) {
-			uint32_t color = selected ? 0xFFFFFFFF : 0xFFB0B0B0;
+			const float bright = 0.68f + 0.32f * grow_;
+			uint32_t color = colorAlpha(colorBlend(0xFFFFFF, 0x000000, bright) & 0xFFFFFF, alpha);
 			dc.Draw()->Flush();
 			dc.GetDrawContext()->BindTexture(0, texture);
 			dc.Draw()->DrawTexRect(b.x, b.y, b.x2(), b.y2(), 0, 0, 1, 1, color);
@@ -388,24 +415,79 @@ private:
 	int index_;
 	std::function<bool(int)> isSelected_;
 	std::function<void(int)> onFocus_;
+	float grow_ = 0.0f;
+	double lastDraw_ = 0.0;
 };
 
-// Big title text, drawn at a larger scale than the theme's biggest font.
-class ConsoleTitleView : public UI::TextView {
+// Text that slides in from the left and fades in whenever the selected game changes.
+// scale > 1 draws bigger than the theme's biggest font (used for the title).
+class ConsoleAnimText : public UI::TextView {
 public:
-	ConsoleTitleView(UI::LayoutParams *layoutParams) : UI::TextView("", layoutParams) {}
+	ConsoleAnimText(float scale, bool small, float delay, UI::LayoutParams *layoutParams)
+		: UI::TextView("", layoutParams), scale_(scale), small_(small), delay_(delay) {}
 	void GetContentDimensionsBySpec(const UIContext &dc, UI::MeasureSpec horiz, UI::MeasureSpec vert, float &w, float &h) const override {
 		w = horiz.size > 0 ? horiz.size : 600.0f;
-		h = 76.0f;
+		h = scale_ > 1.0f ? 40.0f * scale_ : (small_ ? 28.0f : 34.0f);
 	}
 	void Draw(UIContext &dc) override {
-		dc.SetFontStyle(dc.GetTheme().uiFontBig);
-		dc.SetFontScale(1.9f, 1.9f);
-		dc.DrawTextRectSqueeze(GetText(), bounds_, dc.GetTheme().infoStyle.fgColor, ALIGN_LEFT | ALIGN_VCENTER);
+		const float t = EaseOut(float(time_now_d() - std::max(s_consoleSelectTime, s_consoleOpenTime + 0.15) - delay_) / 0.4f);
+		Bounds b = bounds_;
+		b.x += (1.0f - t) * 36.0f;
+		const uint32_t color = colorAlpha(dc.GetTheme().infoStyle.fgColor & 0xFFFFFF, t * (small_ ? 0.8f : 1.0f));
+		if (scale_ > 1.0f) {
+			dc.SetFontStyle(dc.GetTheme().uiFontBig);
+			dc.SetFontScale(scale_, scale_);
+		} else {
+			dc.SetFontStyle(small_ ? dc.GetTheme().uiFontSmall : dc.GetTheme().uiFont);
+		}
+		dc.DrawTextRectSqueeze(GetText(), b, color, ALIGN_LEFT | ALIGN_VCENTER);
 		dc.SetFontScale(1.0f, 1.0f);
 		dc.SetFontStyle(dc.GetTheme().uiFont);
 	}
+private:
+	float scale_;
+	bool small_;
+	float delay_;
 };
+
+// Soft particles of light drifting upwards, in the theme accent color. Purely decorative.
+void DrawConsoleAmbient(UIContext &dc, double now) {
+	const Bounds &b = dc.GetBounds();
+	const uint32_t accent = ThemeAccent(dc) & 0xFFFFFF;
+	for (int i = 0; i < 22; i++) {
+		// Cheap deterministic pseudo-random values per particle.
+		const float r1 = fmodf(sinf(i * 12.9898f) * 43758.547f, 1.0f) * 0.5f + 0.5f;
+		const float r2 = fmodf(sinf(i * 78.233f) * 12543.31f, 1.0f) * 0.5f + 0.5f;
+		const float r3 = fmodf(sinf(i * 39.425f) * 24634.63f, 1.0f) * 0.5f + 0.5f;
+		const float speed = 0.012f + 0.02f * r2;
+		const float phase = fmodf(r1 + (float)now * speed, 1.0f);
+		const float x = b.x + b.w * (0.35f + 0.65f * r3) + sinf((float)now * 0.4f + i) * 18.0f;
+		const float y = b.y2() - phase * (b.h + 40.0f);
+		const float fade = sinf(phase * 3.14159f);
+		dc.Draw()->DrawImage(ImageID("I_CIRCLE"), x, y, 0.15f + 0.35f * r2, colorAlpha(accent, 0.22f * fade), ALIGN_CENTER);
+	}
+}
+
+// Draws a texture covering the whole screen, slightly zoomed, drifting very slowly.
+void DrawConsoleArt(UIContext &dc, Draw::Texture *texture, float alpha, double now) {
+	const Bounds &sb = dc.GetBounds();
+	const float texAspect = (float)texture->Width() / (float)texture->Height();
+	float w = sb.w, h = sb.w / texAspect;
+	if (h < sb.h) {
+		h = sb.h;
+		w = sb.h * texAspect;
+	}
+	w *= 1.08f;
+	h *= 1.08f;
+	const float dx = sinf((float)now * 0.06f) * sb.w * 0.018f;
+	const float dy = cosf((float)now * 0.045f) * sb.h * 0.014f;
+	Bounds art = Bounds::FromCenterWH(sb.centerX() + dx, sb.centerY() + dy, w, h);
+	dc.Flush();
+	dc.GetDrawContext()->BindTexture(0, texture);
+	dc.Draw()->DrawTexRect(art, 0, 0, 1, 1, colorAlpha(0xFFFFFF, std::clamp(alpha, 0.0f, 1.0f)));
+	dc.Flush();
+	dc.RebindTexture();
+}
 
 // A pill-ish button. "primary" uses the theme accent as background.
 class ConsoleButton : public UI::Choice {
@@ -491,6 +573,7 @@ void MainScreen::CreateConsoleViews() {
 	}
 	if (s_tryledSelected >= (int)consoleGames_.size())
 		s_tryledSelected = 0;
+	s_consoleOpenTime = time_now_d();
 
 	LinearLayout *rootLayout = new LinearLayout(ORIENT_VERTICAL, new LinearLayoutParams(FILL_PARENT, FILL_PARENT));
 	rootLayout->SetSpacing(0.0f);
@@ -514,10 +597,10 @@ void MainScreen::CreateConsoleViews() {
 	consoleClock_ = topBar->Add(new TextView(ClockString(), new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, 0.0f, Gravity::G_VCENTER)));
 
 	// The row of games.
-	ScrollView *rowScroll = rootLayout->Add(new ScrollView(ORIENT_HORIZONTAL, new LinearLayoutParams(FILL_PARENT, 104.0f, Margins(0, 4, 0, 0))));
+	ScrollView *rowScroll = rootLayout->Add(new ScrollView(ORIENT_HORIZONTAL, new LinearLayoutParams(FILL_PARENT, 112.0f, Margins(0, 4, 0, 0))));
 	LinearLayout *row = rowScroll->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(WRAP_CONTENT, FILL_PARENT)));
-	row->SetSpacing(14.0f);
-	row->Add(new Spacer(10.0f));
+	row->SetSpacing(22.0f);
+	row->Add(new Spacer(14.0f));
 	View *firstTile = nullptr;
 	for (int i = 0; i < (int)consoleGames_.size(); i++) {
 		ConsoleGameTile *tile = row->Add(new ConsoleGameTile(consoleGames_[i], i,
@@ -544,9 +627,9 @@ void MainScreen::CreateConsoleViews() {
 	// Selected game: small name, big title, description.
 	LinearLayout *hero = rootLayout->Add(new LinearLayout(ORIENT_VERTICAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(28, 6, 28, 0))));
 	hero->SetSpacing(2.0f);
-	consoleSmallName_ = hero->Add(new TextView("", ALIGN_LEFT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
-	consoleTitle_ = hero->Add(new ConsoleTitleView(new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
-	consoleSub_ = hero->Add(new TextView("", ALIGN_LEFT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
+	consoleSmallName_ = hero->Add(new ConsoleAnimText(1.0f, true, 0.0f, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
+	consoleTitle_ = hero->Add(new ConsoleAnimText(1.9f, false, 0.05f, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
+	consoleSub_ = hero->Add(new ConsoleAnimText(1.0f, true, 0.12f, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
 
 	LinearLayout *buttons = hero->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, Margins(0, 14, 0, 0))));
 	buttons->SetSpacing(12.0f);
@@ -591,6 +674,9 @@ void MainScreen::ConsoleSelect(int index) {
 	if (index < 0 || index >= (int)consoleGames_.size())
 		return;
 	if (index != s_tryledSelected) {
+		s_consolePrevArt = consoleGames_[s_tryledSelected];
+		s_consoleArtTime = time_now_d();
+		s_consoleSelectTime = s_consoleArtTime;
 		s_tryledSelected = index;
 		g_BackgroundAudio.SetGame(consoleGames_[index]);
 	}
@@ -915,6 +1001,12 @@ void MainScreen::update() {
 	UpdateUIState(UISTATE_MENU);
 
 	// Game info loads asynchronously, and the clock ticks: refresh the console home now and then.
+	if (consoleTitle_ && !s_startupSoundPlayed && time_now_d() - s_consoleOpenTime > 0.3) {
+		s_startupSoundPlayed = true;
+		if (g_Config.bUISound) {
+			g_BackgroundAudio.SFX().Play(UI::UISound::STARTUP, Volume100ToMultiplier(g_Config.iUIVolume));
+		}
+	}
 	if (consoleTitle_ && time_now_d() - consoleLastRefresh_ > 0.5) {
 		ConsoleRefreshInfo();
 	}
@@ -940,14 +1032,21 @@ void MainScreen::OnLoadFile(UI::EventParams &e) {
 
 void MainScreen::DrawBackground(UIContext &dc) {
 	if (consoleTitle_) {
-		if (consoleGames_.empty() || s_tryledSelected >= (int)consoleGames_.size())
-			return;
-		std::shared_ptr<GameInfo> ginfo = g_gameInfoCache->GetInfo(dc.GetDrawContext(), consoleGames_[s_tryledSelected], GameInfoFlags::PIC1);
-		if (!ginfo->Ready(GameInfoFlags::PIC1) || !ginfo->pic1.texture)
-			return;
-		const float alpha = std::clamp(float(time_now_d() - ginfo->pic1.timeLoaded) * 3.0f, 0.0f, 1.0f);
-		DrawBackgroundTexture(dc, ginfo->pic1.texture, Lin::Vec3(0.0f, 0.0f, 0.0f), alpha);
-		// Fade the artwork into the theme background on the left (where the text is) and at the bottom.
+		const double now = time_now_d();
+		if (!consoleGames_.empty() && s_tryledSelected < (int)consoleGames_.size()) {
+			const float fade = EaseOut(float(now - s_consoleArtTime) / 0.5f);
+			// The previous game's art fades out underneath the new one.
+			if (fade < 1.0f && !s_consolePrevArt.empty()) {
+				std::shared_ptr<GameInfo> prev = g_gameInfoCache->GetInfo(dc.GetDrawContext(), s_consolePrevArt, GameInfoFlags::PIC1);
+				if (prev->Ready(GameInfoFlags::PIC1) && prev->pic1.texture)
+					DrawConsoleArt(dc, prev->pic1.texture, 1.0f - fade, now);
+			}
+			std::shared_ptr<GameInfo> ginfo = g_gameInfoCache->GetInfo(dc.GetDrawContext(), consoleGames_[s_tryledSelected], GameInfoFlags::PIC1);
+			if (ginfo->Ready(GameInfoFlags::PIC1) && ginfo->pic1.texture) {
+				const float loaded = std::clamp(float(now - ginfo->pic1.timeLoaded) * 3.0f, 0.0f, 1.0f);
+				DrawConsoleArt(dc, ginfo->pic1.texture, std::min(fade, loaded), now);
+			}
+		}
 		const Bounds &b = dc.GetBounds();
 		const uint32_t bg = dc.GetTheme().backgroundColor & 0xFFFFFF;
 		dc.Flush();
@@ -964,6 +1063,7 @@ void MainScreen::DrawBackground(UIContext &dc) {
 			const float t = (float)i / (strips / 2 - 1);
 			dc.FillRect(UI::Drawable(colorAlpha(bg, 0.95f * t)), Bounds(b.x, b.y2() - fadeH + fadeH * i / (strips / 2), b.w, fadeH / (strips / 2) + 1.0f));
 		}
+		DrawConsoleAmbient(dc, now);
 		dc.Flush();
 		return;
 	}

@@ -242,7 +242,7 @@ static const ConfigSetting generalSettings[] = {
 	ConfigSetting("Language", SETTING(g_Config, sLanguageIni), &DefaultLangRegion, CfgFlag::DEFAULT),
 	ConfigSetting("ForceLagSync2", SETTING(g_Config, bForceLagSync), false, CfgFlag::PER_GAME),
 	ConfigSetting("DiscordRichPresence", SETTING(g_Config, bDiscordRichPresence), false, CfgFlag::DEFAULT),
-	ConfigSetting("UISound", SETTING(g_Config, bUISound), false, CfgFlag::DEFAULT),
+	ConfigSetting("UISound", SETTING(g_Config, bUISound), true, CfgFlag::DEFAULT),
 
 	ConfigSetting("DisableHTTPS", SETTING(g_Config, bDisableHTTPS), false, CfgFlag::DONT_SAVE),
 	ConfigSetting("AutoLoadSaveState", SETTING(g_Config, iAutoLoadSaveState), 0, CfgFlag::PER_GAME),

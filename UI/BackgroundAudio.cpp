@@ -559,6 +559,7 @@ void SoundEffectMixer::LoadDefaultSample(UI::UISound sound) {
 	case UI::UISound::TOGGLE_OFF: filename = "sfx_toggle_off.wav"; break;
 	case UI::UISound::ACHIEVEMENT_UNLOCKED: filename = "sfx_achievement_unlocked.wav"; break;
 	case UI::UISound::LEADERBOARD_SUBMITTED: filename = "sfx_leaderbord_submitted.wav"; break;
+	case UI::UISound::STARTUP: filename = "sfx_startup.wav"; break;
 	default:
 		return;
 	}
@@ -606,6 +607,7 @@ void SoundEffectMixer::LoadSamplesOnThread() {
 	LoadDefaultSample(UI::UISound::CONFIRM);
 	LoadDefaultSample(UI::UISound::TOGGLE_ON);
 	LoadDefaultSample(UI::UISound::TOGGLE_OFF);
+	LoadDefaultSample(UI::UISound::STARTUP);
 
 	if (!g_Config.sAchievementsUnlockAudioFile.empty()) {
 		UpdateSample(UI::UISound::ACHIEVEMENT_UNLOCKED, Sample::Load(g_Config.sAchievementsUnlockAudioFile));
