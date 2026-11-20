@@ -90,3 +90,6 @@
 [submodule "ext/tryled-cores/stella2014"]
 	path = ext/tryled-cores/stella2014
 	url = https://github.com/libretro/stella2014-libretro.git
+[submodule "ext/tryled-cores/beetle_wswan"]
+	path = ext/tryled-cores/beetle_wswan
+	url = https://github.com/libretro/beetle-wswan-libretro.git
