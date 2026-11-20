@@ -1586,6 +1586,8 @@ if(NOT LIBRETRO)
 		UI/RetroCore.h
 		UI/RetroScreen.cpp
 		UI/RetroScreen.h
+		UI/TryledDraw.cpp
+		UI/TryledDraw.h
 	)
 endif()
 

@@ -76,7 +76,7 @@ protected:
 	UI::TextView *consoleSmallName_ = nullptr;
 	UI::TextView *consoleTitle_ = nullptr;
 	UI::TextView *consoleSub_ = nullptr;
-	UI::TextView *consoleCardValue_[3]{};
+	UI::View *consoleShift_ = nullptr;  // ConsoleShiftLayout: slides the home up to show the bottom cards.
 	UI::TextView *consoleClock_ = nullptr;
 	double consoleLastRefresh_ = 0.0;
 

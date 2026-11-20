@@ -52,6 +52,7 @@
 #include "UI/Background.h"
 #include "UI/GameBrowser.h"
 #include "UI/RetroScreen.h"
+#include "UI/TryledDraw.h"
 #include "Core/Config.h"
 #include "Core/Loaders.h"
 #include "Common/Data/Text/I18n.h"
@@ -342,105 +343,6 @@ uint32_t ThemeAccentText(const UIContext &dc) {
 	return dc.GetTheme().itemFocusedStyle.fgColor;
 }
 
-// One game in the top row. Draws the game's icon; the selected one gets an accent frame.
-class ConsoleGameTile : public UI::Clickable {
-public:
-	ConsoleGameTile(const Path &path, const std::string &console, int index, std::function<bool(int)> isSelected, std::function<void(int)> onFocus, UI::LayoutParams *layoutParams)
-		: UI::Clickable(layoutParams), path_(path), console_(console), index_(index), isSelected_(isSelected), onFocus_(onFocus) {}
-
-	void GetContentDimensions(const UIContext &dc, float &w, float &h) const override {
-		w = 144.0f;
-		h = 80.0f;
-	}
-
-	void FocusChanged(UI::FocusFlags focusFlags) override {
-		UI::Clickable::FocusChanged(focusFlags);
-		if ((focusFlags & UI::FocusFlags::GOT_FOCUS) && onFocus_) {
-			onFocus_(index_);
-		}
-	}
-
-	void Draw(UIContext &dc) override {
-		const bool selected = isSelected_ && isSelected_(index_);
-		const uint32_t accent = ThemeAccent(dc);
-
-		// Smoothly grow the selected tile, shrink the others.
-		const double now = time_now_d();
-		const float dt = lastDraw_ > 0.0 ? (float)std::min(now - lastDraw_, 0.1) : 1.0f;
-		lastDraw_ = now;
-		grow_ += ((selected ? 1.0f : 0.0f) - grow_) * std::min(1.0f, dt * 14.0f);
-
-		// Intro: tiles drop in one after another when the screen opens.
-		const float intro = EaseOut(float(now - s_consoleOpenTime - index_ * 0.04) / 0.45f);
-		Bounds b = bounds_.Expand(grow_ * 9.0f);
-		b.y -= (1.0f - intro) * 30.0f;
-		const float alpha = intro;
-
-		if (grow_ > 0.01f) {
-			// Frame with a soft pulsing glow.
-			const float pulse = 0.75f + 0.25f * sinf((float)now * 3.0f);
-			dc.Draw()->DrawImage4Grid(dc.GetTheme().dropShadow4Grid, b.x - 14, b.y - 14, b.x2() + 14, b.y2() + 14, colorAlpha(accent & 0xFFFFFF, 0.55f * grow_ * pulse * alpha), 1.0f);
-			dc.FillRect(UI::Drawable(colorAlpha(accent & 0xFFFFFF, grow_ * alpha)), b.Expand(4.0f));
-			dc.FillRect(UI::Drawable(dc.GetTheme().backgroundColor | 0xFF000000), b.Expand(1.5f));
-		}
-		dc.FillRect(UI::Drawable(colorAlpha(dc.GetTheme().itemStyle.background.color & 0xFFFFFF, alpha)), b);
-
-		// Only PSP games go through the game info cache (it knows nothing about other consoles' files).
-		std::shared_ptr<GameInfo> ginfo;
-		if (console_ == "PSP")
-			ginfo = g_gameInfoCache->GetInfo(dc.GetDrawContext(), path_, kConsoleInfoFlags);
-		Draw::Texture *texture = (ginfo && ginfo->Ready(GameInfoFlags::ICON) && ginfo->icon.texture) ? ginfo->icon.texture : nullptr;
-		if (texture) {
-			const float bright = 0.68f + 0.32f * grow_;
-			uint32_t color = colorAlpha(colorBlend(0xFFFFFF, 0x000000, bright) & 0xFFFFFF, alpha);
-			dc.Draw()->Flush();
-			dc.GetDrawContext()->BindTexture(0, texture);
-			dc.Draw()->DrawTexRect(b.x, b.y, b.x2(), b.y2(), 0, 0, 1, 1, color);
-			dc.Draw()->Flush();
-			dc.RebindTexture();
-		} else {
-			// No icon (homebrew, still loading...): show the initials of the title.
-			std::string title = (ginfo && ginfo->Ready(GameInfoFlags::PARAM_SFO)) ? ginfo->GetTitle() : path_.WithReplacedExtension("").GetFilename();
-			std::string initials;
-			bool newWord = true;
-			for (char c : title) {
-				if (c == ' ' || c == '_' || c == '-') {
-					newWord = true;
-				} else if (newWord && initials.size() < 2 && (unsigned char)c < 0x80 && isalnum((unsigned char)c)) {
-					initials.push_back((char)toupper((unsigned char)c));
-					newWord = false;
-				} else {
-					newWord = false;
-				}
-			}
-			dc.SetFontStyle(dc.GetTheme().uiFontBig);
-			dc.DrawText(initials, b.centerX(), b.centerY(), dc.GetTheme().itemStyle.fgColor, ALIGN_CENTER);
-			dc.SetFontStyle(dc.GetTheme().uiFont);
-		}
-		if (console_ != "PSP") {
-			// Console badge in the corner, so non-PSP games are easy to tell apart.
-			dc.SetFontStyle(dc.GetTheme().uiFontTiny);
-			float tw, th;
-			dc.MeasureText(dc.GetTheme().uiFontTiny, 1.0f, 1.0f, console_, &tw, &th);
-			dc.FillRect(UI::Drawable(colorAlpha(0x000000, 0.65f * alpha)), Bounds(b.x + 4, b.y2() - th - 6, tw + 8, th + 2));
-			dc.DrawText(console_, b.x + 8, b.y2() - th - 5, colorAlpha(0xFFFFFF, alpha), ALIGN_TOPLEFT);
-			dc.SetFontStyle(dc.GetTheme().uiFont);
-		}
-		if (HasFocus() && !selected) {
-			dc.Draw()->RectOutline(b.x, b.y, b.w, b.h, accent);
-		}
-	}
-
-private:
-	Path path_;
-	std::string console_;
-	int index_;
-	std::function<bool(int)> isSelected_;
-	std::function<void(int)> onFocus_;
-	float grow_ = 0.0f;
-	double lastDraw_ = 0.0;
-};
-
 // Text that slides in from the left and fades in whenever the selected game changes.
 // scale > 1 draws bigger than the theme's biggest font (used for the title).
 class ConsoleAnimText : public UI::TextView {
@@ -511,51 +413,6 @@ void DrawConsoleArt(UIContext &dc, Draw::Texture *texture, float alpha, double n
 	dc.RebindTexture();
 }
 
-// A pill-ish button. "primary" uses the theme accent as background.
-class ConsoleButton : public UI::Choice {
-public:
-	ConsoleButton(std::string_view text, ImageID image, bool primary, UI::LayoutParams *layoutParams)
-		: UI::Choice(text, image, layoutParams), primary_(primary) {}
-	void GetContentDimensionsBySpec(const UIContext &dc, UI::MeasureSpec horiz, UI::MeasureSpec vert, float &w, float &h) const override {
-		UI::Choice::GetContentDimensionsBySpec(dc, horiz, vert, w, h);
-		w += primary_ ? 48.0f : 8.0f;
-		h = 56.0f;
-	}
-	void Draw(UIContext &dc) override {
-		uint32_t bg = primary_ ? ThemeAccent(dc) : colorAlpha(dc.GetTheme().infoStyle.fgColor & 0xFFFFFF, 0.16f);
-		uint32_t fg = primary_ ? ThemeAccentText(dc) : dc.GetTheme().infoStyle.fgColor;
-		if (down_) {
-			bg = dc.GetTheme().itemDownStyle.background.color;
-			fg = dc.GetTheme().itemDownStyle.fgColor;
-		}
-		dc.FillRect(UI::Drawable(bg), bounds_);
-		if (HasFocus()) {
-			dc.Draw()->RectOutline(bounds_.x - 3, bounds_.y - 3, bounds_.w + 6, bounds_.h + 6, ThemeAccent(dc));
-		}
-		float x = bounds_.x + 18.0f;
-		if (image_.isValid()) {
-			dc.Draw()->DrawImage(image_, x + 14.0f, bounds_.centerY(), 0.8f, fg, ALIGN_CENTER);
-			x += 36.0f;
-		}
-		if (!text_.empty()) {
-			dc.SetFontStyle(dc.GetTheme().uiFont);
-			dc.DrawText(text_, x, bounds_.centerY(), fg, ALIGN_VCENTER);
-		}
-	}
-private:
-	bool primary_;
-};
-
-// Info card: small label on top, value below.
-class ConsoleCard : public UI::LinearLayout {
-public:
-	ConsoleCard(UI::LayoutParams *layoutParams) : UI::LinearLayout(ORIENT_VERTICAL, layoutParams) {}
-	void Draw(UIContext &dc) override {
-		dc.FillRect(UI::Drawable(colorAlpha(dc.GetTheme().itemStyle.background.color & 0xFFFFFF, 0.85f)), bounds_);
-		UI::LinearLayout::Draw(dc);
-	}
-};
-
 std::string FormatPlayTime(int seconds) {
 	const int hours = seconds / 3600;
 	const int minutes = (seconds / 60) % 60;
@@ -579,6 +436,461 @@ std::string ClockString() {
 	snprintf(buf, sizeof(buf), "%02d:%02d", local.tm_hour, local.tm_min);
 	return buf;
 }
+
+// ---- Tryled console home: views (layout and look follow the approved preview) ----
+
+static const float kTile = 56.0f;      // Unselected game tile (square).
+static const float kTileSel = 84.0f;   // Selected game tile.
+static const float kRadius = 12.0f;    // Corner radius for tiles, cards and the box art.
+
+// What the home shows about the selected game. Filled by ConsoleRefreshInfo(), read by the views.
+struct ConsoleGameDetails {
+	bool empty = true;
+	bool psp = false;
+	std::string console;
+	Path path;
+	std::string title;
+	bool played = false;
+	int playedSeconds = 0;
+	std::string lastPlayed;
+	std::vector<bool> slots;
+	bool customConfig = false;
+	std::string coreName;
+};
+static ConsoleGameDetails s_details;
+
+uint32_t ThemeFg(const UIContext &dc) {
+	return dc.GetTheme().infoStyle.fgColor;
+}
+
+uint32_t ThemePanel(const UIContext &dc) {
+	return dc.GetTheme().itemStyle.background.color | 0xFF000000;
+}
+
+uint32_t WithAlpha(uint32_t color, float a) {
+	return colorAlpha(color & 0xFFFFFF, std::clamp(a, 0.0f, 1.0f));
+}
+
+// Short label for console badges.
+std::string ConsoleShort(const std::string &console) {
+	if (console == "Mega Drive") return "MD";
+	if (console == "Master System") return "SMS";
+	if (console == "Game Gear") return "GG";
+	if (console == "PC Engine") return "PCE";
+	if (console == "Atari 2600") return "2600";
+	if (console == "Atari 7800") return "7800";
+	if (console == "WonderSwan") return "WS";
+	return console;
+}
+
+// A stable, pleasant color for games without artwork, from their name.
+uint32_t ColorFromName(const std::string &name, float lightness) {
+	uint32_t h = 2166136261u;
+	for (char c : name)
+		h = (h ^ (uint8_t)c) * 16777619u;
+	const float hue = (h % 360) / 360.0f;
+	// HSV -> RGB with saturation 0.65.
+	const float s = 0.65f, v = lightness;
+	const int i = (int)(hue * 6.0f);
+	const float f = hue * 6.0f - i;
+	const float p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
+	float r, g, b;
+	switch (i % 6) {
+	case 0: r = v; g = t; b = p; break;
+	case 1: r = q; g = v; b = p; break;
+	case 2: r = p; g = v; b = t; break;
+	case 3: r = p; g = q; b = v; break;
+	case 4: r = t; g = p; b = v; break;
+	default: r = v; g = p; b = q; break;
+	}
+	return 0xFF000000 | ((uint32_t)(b * 255) << 16) | ((uint32_t)(g * 255) << 8) | (uint32_t)(r * 255);
+}
+
+std::string Initials(const std::string &title) {
+	std::string initials;
+	bool newWord = true;
+	for (char c : title) {
+		if (c == ' ' || c == '_' || c == '-' || c == '.') {
+			newWord = true;
+		} else if (newWord && initials.size() < 2 && (unsigned char)c < 0x80 && isalnum((unsigned char)c)) {
+			initials.push_back((char)toupper((unsigned char)c));
+			newWord = false;
+		} else {
+			newWord = false;
+		}
+	}
+	return initials;
+}
+
+// Box art / tile fill for a game: its icon (or artwork) cropped to the box, or a colored square with initials.
+void DrawGameArt(UIContext &dc, const Path &path, const std::string &console, const Bounds &b, float radius, bool preferPic1, uint32_t tint) {
+	Draw::Texture *tex = nullptr;
+	std::string title;
+	if (console == "PSP") {
+		std::shared_ptr<GameInfo> ginfo = g_gameInfoCache->GetInfo(dc.GetDrawContext(), path, kConsoleInfoFlags);
+		if (preferPic1 && ginfo->Ready(GameInfoFlags::PIC1) && ginfo->pic1.texture)
+			tex = ginfo->pic1.texture;
+		else if (ginfo->Ready(GameInfoFlags::ICON) && ginfo->icon.texture)
+			tex = ginfo->icon.texture;
+		if (ginfo->Ready(GameInfoFlags::PARAM_SFO))
+			title = ginfo->GetTitle();
+	}
+	if (title.empty())
+		title = path.WithReplacedExtension("").GetFilename();
+	if (tex) {
+		float u1, v1, u2, v2;
+		TryledDraw::CoverUV((float)tex->Width() / (float)tex->Height(), b.w / b.h, &u1, &v1, &u2, &v2);
+		TryledDraw::TextureRoundRect(dc, tex, b, radius, tint, u1, v1, u2, v2);
+	} else {
+		TryledDraw::FillRoundRect(dc, b, radius, ColorFromName(title, 0.55f));
+		dc.SetFontStyle(dc.GetTheme().uiFontBig);
+		const float scale = b.w / 84.0f;
+		dc.SetFontScale(scale, scale);
+		dc.DrawText(Initials(title), b.centerX(), b.centerY(), 0xFFFFFFFF, ALIGN_CENTER);
+		dc.SetFontScale(1.0f, 1.0f);
+		dc.SetFontStyle(dc.GetTheme().uiFont);
+	}
+}
+
+// One game in the top row: a rounded square that grows when selected, with a white frame and a soft glow.
+class ConsoleGameTile : public UI::Clickable {
+public:
+	ConsoleGameTile(const Path &path, const std::string &console, bool showBadge, int index, std::function<bool(int)> isSelected, std::function<void(int)> onFocus)
+		: UI::Clickable(new UI::LinearLayoutParams(UI::WRAP_CONTENT, UI::WRAP_CONTENT, 0.0f, UI::Gravity::G_VCENTER)),
+		  path_(path), console_(console), showBadge_(showBadge), index_(index), isSelected_(isSelected), onFocus_(onFocus) {
+		grow_ = isSelected_(index_) ? 1.0f : 0.0f;
+	}
+
+	void GetContentDimensions(const UIContext &dc, float &w, float &h) const override {
+		w = h = kTile + (kTileSel - kTile) * grow_;
+	}
+
+	void FocusChanged(UI::FocusFlags focusFlags) override {
+		UI::Clickable::FocusChanged(focusFlags);
+		if ((focusFlags & UI::FocusFlags::GOT_FOCUS) && onFocus_)
+			onFocus_(index_);
+	}
+
+	void Draw(UIContext &dc) override {
+		const bool selected = isSelected_(index_);
+		const double now = time_now_d();
+		const float dt = lastDraw_ > 0.0 ? (float)std::min(now - lastDraw_, 0.1) : 1.0f;
+		lastDraw_ = now;
+		grow_ += ((selected ? 1.0f : 0.0f) - grow_) * std::min(1.0f, dt * 14.0f);
+
+		const float intro = EaseOut(float(now - s_consoleOpenTime - index_ * 0.04) / 0.45f);
+		Bounds b = bounds_;
+		b.y -= (1.0f - intro) * 26.0f;
+		const uint32_t accent = ThemeAccent(dc);
+
+		if (grow_ > 0.01f) {
+			const float pulse = 0.75f + 0.25f * sinf((float)now * 2.6f);
+			TryledDraw::Glow(dc, b.Expand(3.0f), kRadius + 3.0f, 18.0f, WithAlpha(accent, 0.9f * grow_ * pulse * intro));
+			TryledDraw::StrokeRoundRect(dc, b.Expand(5.0f), kRadius + 5.0f, 2.0f, WithAlpha(ThemeFg(dc), grow_ * intro));
+		}
+		const float bright = 0.78f + 0.22f * grow_;
+		DrawGameArt(dc, path_, console_, b, kRadius, false, WithAlpha(colorBlend(0xFFFFFF, 0x000000, bright), intro));
+		if (grow_ < 0.99f)
+			TryledDraw::FillRoundRect(dc, b, kRadius, WithAlpha(0x000000, 0.22f * (1.0f - grow_) * intro));
+
+		if (showBadge_) {
+			const std::string label = ConsoleShort(console_);
+			dc.SetFontStyle(dc.GetTheme().uiFontTiny);
+			float tw, th;
+			dc.MeasureText(dc.GetTheme().uiFontTiny, 0.55f, 0.55f, label, &tw, &th);
+			Bounds badge(b.x + 3.0f, b.y2() - th - 5.0f, tw + 6.0f, th + 2.0f);
+			TryledDraw::FillRoundRect(dc, badge, 3.0f, WithAlpha(0x000000, 0.6f * intro));
+			dc.SetFontScale(0.55f, 0.55f);
+			dc.DrawText(label, badge.x + 3.0f, badge.y + 1.0f, WithAlpha(0xFFFFFF, intro), ALIGN_TOPLEFT);
+			dc.SetFontScale(1.0f, 1.0f);
+			dc.SetFontStyle(dc.GetTheme().uiFont);
+		}
+		if (HasFocus() && !selected)
+			TryledDraw::StrokeRoundRect(dc, b.Expand(3.0f), kRadius + 3.0f, 2.0f, accent);
+	}
+
+private:
+	Path path_;
+	std::string console_;
+	bool showBadge_;
+	int index_;
+	std::function<bool(int)> isSelected_;
+	std::function<void(int)> onFocus_;
+	float grow_ = 0.0f;
+	double lastDraw_ = 0.0;
+};
+
+// Rounded square with an icon: the "library" tile at the end of the row, and the small top bar buttons.
+class ConsoleIconButton : public UI::Clickable {
+public:
+	ConsoleIconButton(ImageID image, float size, bool panel, float iconScale = 0.85f)
+		: UI::Clickable(new UI::LinearLayoutParams(size, size, 0.0f, UI::Gravity::G_VCENTER)), image_(image), size_(size), panel_(panel), iconScale_(iconScale) {}
+	void Draw(UIContext &dc) override {
+		const uint32_t fg = ThemeFg(dc);
+		if (panel_)
+			TryledDraw::FillRoundRect(dc, bounds_, kRadius, ThemePanel(dc));
+		else if (HasFocus() || down_)
+			TryledDraw::FillRoundRect(dc, bounds_, bounds_.h * 0.5f, WithAlpha(fg, 0.14f));
+		if (HasFocus())
+			TryledDraw::StrokeRoundRect(dc, bounds_.Expand(3.0f), panel_ ? kRadius + 3.0f : bounds_.h * 0.5f + 3.0f, 2.0f, ThemeAccent(dc));
+		dc.Draw()->DrawImage(image_, bounds_.centerX(), bounds_.centerY(), iconScale_ * size_ / 48.0f, WithAlpha(fg, 0.9f), ALIGN_CENTER);
+	}
+private:
+	ImageID image_;
+	float size_;
+	bool panel_;
+	float iconScale_;
+};
+
+// Profile circle with an initial (from the PSP nickname setting).
+class ConsoleAvatar : public UI::InertView {
+public:
+	ConsoleAvatar() : UI::InertView(new UI::LinearLayoutParams(30.0f, 30.0f, 0.0f, UI::Gravity::G_VCENTER)) {}
+	void Draw(UIContext &dc) override {
+		const float d = std::min(bounds_.w, bounds_.h);
+		const Bounds c = Bounds::FromCenter(bounds_.centerX(), bounds_.centerY(), d * 0.5f);
+		TryledDraw::FillRoundRect(dc, c, d * 0.5f, ThemeAccent(dc));
+		TryledDraw::StrokeRoundRect(dc, c, d * 0.5f, 2.0f, WithAlpha(ThemeFg(dc), 0.45f));
+		std::string letter = "T";
+		if (!g_Config.sNickName.empty() && (unsigned char)g_Config.sNickName[0] < 0x80)
+			letter = std::string(1, (char)toupper((unsigned char)g_Config.sNickName[0]));
+		dc.SetFontStyle(dc.GetTheme().uiFontSmall);
+		dc.DrawText(letter, c.centerX(), c.centerY(), ThemeAccentText(dc), ALIGN_CENTER);
+		dc.SetFontStyle(dc.GetTheme().uiFont);
+	}
+};
+
+// Subtitle under the title: console badge + text, sliding in with the title.
+class ConsoleSubText : public ConsoleAnimText {
+public:
+	ConsoleSubText(UI::LayoutParams *lp) : ConsoleAnimText(1.0f, true, 0.1f, lp) {}
+	void SetBadge(const std::string &badge) { badge_ = badge; }
+	void Draw(UIContext &dc) override {
+		const float t = EaseOut(float(time_now_d() - std::max(s_consoleSelectTime, s_consoleOpenTime + 0.15) - 0.1) / 0.4f);
+		float x = bounds_.x + (1.0f - t) * 36.0f;
+		const uint32_t fg = WithAlpha(ThemeFg(dc), t);
+		dc.SetFontStyle(dc.GetTheme().uiFontSmall);
+		if (!badge_.empty()) {
+			float tw, th;
+			dc.SetFontScale(0.75f, 0.75f);
+			dc.MeasureText(dc.GetTheme().uiFontSmall, 0.75f, 0.75f, badge_, &tw, &th);
+			Bounds bb(x, bounds_.centerY() - th * 0.5f - 2.0f, tw + 10.0f, th + 4.0f);
+			TryledDraw::StrokeRoundRect(dc, bb, 4.0f, 1.0f, WithAlpha(ThemeFg(dc), 0.55f * t));
+			dc.DrawText(badge_, bb.x + 5.0f, bounds_.centerY(), fg, ALIGN_VCENTER);
+			dc.SetFontScale(1.0f, 1.0f);
+			x += bb.w + 8.0f;
+		}
+		dc.DrawTextRectSqueeze(GetText(), Bounds(x, bounds_.y, bounds_.x2() - x, bounds_.h), WithAlpha(ThemeFg(dc), 0.85f * t), ALIGN_LEFT | ALIGN_VCENTER);
+		dc.SetFontStyle(dc.GetTheme().uiFont);
+	}
+private:
+	std::string badge_;
+};
+
+// "Jugar": a pill. White on the Negro total theme, the accent color on the others.
+class ConsolePlayButton : public UI::Clickable {
+public:
+	ConsolePlayButton(std::string_view text) : UI::Clickable(new UI::LinearLayoutParams(UI::WRAP_CONTENT, UI::WRAP_CONTENT, 0.0f, UI::Gravity::G_VCENTER)), text_(text) {}
+	void GetContentDimensions(const UIContext &dc, float &w, float &h) const override {
+		float tw, th;
+		dc.MeasureText(dc.GetTheme().uiFont, 1.0f, 1.0f, text_, &tw, &th);
+		w = tw + 64.0f;
+		h = 44.0f;
+	}
+	void Draw(UIContext &dc) override {
+		const bool white = g_Config.sThemeName == "Negro total";
+		uint32_t bg = white ? WithAlpha(ThemeFg(dc), 0.92f) : ThemeAccent(dc);
+		uint32_t fg = white ? (dc.GetTheme().backgroundColor | 0xFF000000) : ThemeAccentText(dc);
+		if (down_) {
+			bg = dc.GetTheme().itemDownStyle.background.color;
+			fg = dc.GetTheme().itemDownStyle.fgColor;
+		}
+		Bounds b = bounds_;
+		if (HasFocus())
+			b = b.Expand(2.0f);
+		if (!white)
+			TryledDraw::Glow(dc, b, b.h * 0.5f, 14.0f, WithAlpha(ThemeAccent(dc), 0.6f));
+		TryledDraw::FillRoundRect(dc, b, b.h * 0.5f, bg);
+		if (HasFocus())
+			TryledDraw::StrokeRoundRect(dc, b.Expand(4.0f), b.h * 0.5f + 4.0f, 2.0f, ThemeAccent(dc));
+		dc.SetFontStyle(dc.GetTheme().uiFont);
+		dc.DrawText(text_, b.centerX(), b.centerY(), fg, ALIGN_CENTER);
+	}
+private:
+	std::string text_;
+};
+
+// The round "···" button.
+class ConsoleMoreButton : public UI::Clickable {
+public:
+	ConsoleMoreButton() : UI::Clickable(new UI::LinearLayoutParams(44.0f, 44.0f, 0.0f, UI::Gravity::G_VCENTER)) {}
+	void Draw(UIContext &dc) override {
+		const uint32_t fg = ThemeFg(dc);
+		TryledDraw::FillRoundRect(dc, bounds_, bounds_.h * 0.5f, WithAlpha(fg, down_ ? 0.3f : 0.16f));
+		if (HasFocus())
+			TryledDraw::StrokeRoundRect(dc, bounds_.Expand(4.0f), bounds_.h * 0.5f + 4.0f, 2.0f, ThemeAccent(dc));
+		for (int i = -1; i <= 1; i++)
+			TryledDraw::FillRoundRect(dc, Bounds::FromCenter(bounds_.centerX() + i * 7.0f, bounds_.centerY(), 2.2f), 2.2f, fg);
+	}
+};
+
+// Right card: the game's artwork in a rounded box with its name, and small pills under it.
+class ConsoleArtCard : public UI::InertView {
+public:
+	ConsoleArtCard(UI::LayoutParams *lp) : UI::InertView(lp) {}
+	void GetContentDimensions(const UIContext &dc, float &w, float &h) const override {
+		w = 150.0f;
+		h = 150.0f + 10.0f + 28.0f;
+	}
+	void Draw(UIContext &dc) override {
+		if (s_details.empty)
+			return;
+		const float t = EaseOut(float(time_now_d() - std::max(s_consoleSelectTime, s_consoleOpenTime + 0.1)) / 0.4f);
+		Bounds box(bounds_.x, bounds_.y + (1.0f - t) * 12.0f, 150.0f, 150.0f);
+		TryledDraw::Glow(dc, box, kRadius, 16.0f, WithAlpha(0x000000, 0.7f * t));
+		DrawGameArt(dc, s_details.path, s_details.console, box, kRadius, true, WithAlpha(0xFFFFFF, t));
+		// Darken the top a bit so the name reads well.
+		TryledDraw::FillRoundRect(dc, Bounds(box.x, box.y, box.w, 44.0f), kRadius, WithAlpha(0x000000, 0.35f * t));
+		dc.SetFontStyle(dc.GetTheme().uiFontSmall);
+		dc.DrawTextRectSqueeze(s_details.title, Bounds(box.x + 10.0f, box.y + 6.0f, box.w - 20.0f, 30.0f), WithAlpha(0xFFFFFF, t), ALIGN_LEFT | ALIGN_VCENTER);
+
+		// Pills, right-aligned: play time and save states.
+		std::vector<std::string> pills;
+		if (s_details.psp) {
+			pills.push_back(s_details.played ? FormatPlayTime(s_details.playedSeconds) : "Sin jugar");
+			int used = 0;
+			for (bool s : s_details.slots)
+				used += s ? 1 : 0;
+			pills.push_back(StringFromFormat("%d guardados", used));
+		} else {
+			pills.push_back(s_details.coreName.empty() ? s_details.console : s_details.coreName);
+		}
+		float x = bounds_.x2();
+		const float y = box.y2() + 10.0f;
+		for (int i = (int)pills.size() - 1; i >= 0; i--) {
+			float tw, th;
+			dc.MeasureText(dc.GetTheme().uiFontSmall, 0.8f, 0.8f, pills[i], &tw, &th);
+			Bounds pb(x - tw - 18.0f, y, tw + 18.0f, 26.0f);
+			TryledDraw::FillRoundRect(dc, pb, 9.0f, WithAlpha(ThemePanel(dc), 0.92f * t));
+			TryledDraw::StrokeRoundRect(dc, pb, 9.0f, 1.0f, WithAlpha(ThemeFg(dc), 0.12f * t));
+			dc.SetFontScale(0.8f, 0.8f);
+			dc.DrawText(pills[i], pb.centerX(), pb.centerY(), WithAlpha(ThemeFg(dc), t), ALIGN_CENTER);
+			dc.SetFontScale(1.0f, 1.0f);
+			x = pb.x - 6.0f;
+		}
+		dc.SetFontStyle(dc.GetTheme().uiFont);
+	}
+};
+
+// Bottom cards: play time, save slots, game settings.
+class ConsoleInfoCard : public UI::InertView {
+public:
+	ConsoleInfoCard(int kind) : UI::InertView(new UI::LinearLayoutParams(UI::FILL_PARENT, 150.0f, 1.0f)), kind_(kind) {}
+	void Draw(UIContext &dc) override {
+		const uint32_t fg = ThemeFg(dc);
+		const uint32_t accent = ThemeAccent(dc);
+		TryledDraw::FillRoundRect(dc, bounds_, kRadius, WithAlpha(ThemePanel(dc), 0.9f));
+		TryledDraw::StrokeRoundRect(dc, bounds_, kRadius, 1.0f, WithAlpha(fg, 0.1f));
+		static const char *const titles[3] = { "Tiempo jugado", "Partidas guardadas", "Ajustes del juego" };
+		const float x = bounds_.x + 14.0f;
+		float y = bounds_.y + 12.0f;
+		TryledDraw::FillRoundRect(dc, Bounds(x, y + 4.0f, 8.0f, 8.0f), 4.0f, accent);
+		dc.SetFontStyle(dc.GetTheme().uiFontSmall);
+		dc.DrawText(titles[kind_], x + 16.0f, y + 8.0f, fg, ALIGN_VCENTER);
+		y += 26.0f;
+		const float w = bounds_.w - 28.0f;
+		std::string big, small;
+		if (s_details.empty || !s_details.psp) {
+			big = "-";
+			small = s_details.empty ? "" : "Disponible para juegos de PSP";
+		} else if (kind_ == 0) {
+			big = s_details.played ? FormatPlayTime(s_details.playedSeconds) : "Sin jugar";
+			small = s_details.lastPlayed;
+			// Progress bar: share of a 20 hour "journey".
+			const float frac = std::min(1.0f, s_details.playedSeconds / (20.0f * 3600.0f));
+			Bounds bar(x, y + 40.0f, w, 6.0f);
+			TryledDraw::FillRoundRect(dc, bar, 3.0f, WithAlpha(fg, 0.12f));
+			if (frac > 0.0f)
+				TryledDraw::FillRoundRect(dc, Bounds(bar.x, bar.y, std::max(6.0f, bar.w * frac), bar.h), 3.0f, accent);
+		} else if (kind_ == 1) {
+			int used = 0;
+			const int n = (int)s_details.slots.size();
+			const float gap = 6.0f;
+			const float sw = n > 0 ? (w - gap * (n - 1)) / n : 0.0f;
+			for (int i = 0; i < n; i++) {
+				Bounds sb(x + i * (sw + gap), y + 6.0f, sw, 36.0f);
+				if (s_details.slots[i]) {
+					TryledDraw::FillRoundRect(dc, sb, 6.0f, WithAlpha(accent, 0.75f));
+					used++;
+				} else {
+					TryledDraw::FillRoundRect(dc, sb, 6.0f, WithAlpha(fg, 0.1f));
+				}
+			}
+			small = used ? StringFromFormat("%d de %d ranuras usadas", used, n) : "Sin partidas guardadas";
+		} else {
+			big = s_details.customConfig ? "Personalizados" : "Globales";
+			small = s_details.customConfig ? "Ajustes propios de este juego" : "Usa los ajustes generales";
+		}
+		if (!big.empty()) {
+			dc.SetFontStyle(dc.GetTheme().uiFontBig);
+			dc.SetFontScale(0.85f, 0.85f);
+			dc.DrawTextRectSqueeze(big, Bounds(x, y, w, 34.0f), fg, ALIGN_LEFT | ALIGN_VCENTER);
+			dc.SetFontScale(1.0f, 1.0f);
+		}
+		if (!small.empty()) {
+			dc.SetFontStyle(dc.GetTheme().uiFontSmall);
+			dc.SetFontScale(0.85f, 0.85f);
+			dc.DrawTextRectSqueeze(small, Bounds(x, y + 54.0f, w, 22.0f), WithAlpha(fg, 0.6f), ALIGN_LEFT | ALIGN_VCENTER);
+			dc.SetFontScale(1.0f, 1.0f);
+		}
+		dc.SetFontStyle(dc.GetTheme().uiFont);
+	}
+private:
+	int kind_;
+};
+
+// Holds the whole home and slides it up to reveal the bottom cards (swipe, wheel or d-pad down).
+class ConsoleShiftLayout : public UI::AnchorLayout {
+public:
+	ConsoleShiftLayout(UI::LayoutParams *lp) : UI::AnchorLayout(lp) {}
+	void SetDown(bool down) { target_ = down ? 150.0f : 0.0f; }
+	bool IsDown() const { return target_ > 0.0f; }
+	void Draw(UIContext &dc) override {
+		const double now = time_now_d();
+		const float dt = last_ > 0.0 ? (float)std::min(now - last_, 0.1) : 0.0f;
+		last_ = now;
+		shift_ += (target_ - shift_) * std::min(1.0f, dt * 10.0f);
+		dc.PushTransform({ Lin::Vec3(0.0f, -shift_, 0.0f), Lin::Vec3(1.0f, 1.0f, 1.0f), 1.0f });
+		UI::AnchorLayout::Draw(dc);
+		dc.PopTransform();
+	}
+	bool Touch(const TouchInput &input) override {
+		TouchInput t = input;
+		t.y += shift_;
+		if (input.flags & TouchInputFlags::DOWN) {
+			startY_ = input.y;
+			tracking_ = true;
+		}
+		if ((input.flags & TouchInputFlags::UP) && tracking_) {
+			tracking_ = false;
+			const float dy = input.y - startY_;
+			if (dy < -60.0f && !IsDown()) {
+				SetDown(true);
+				UI::PlayUISound(UI::UISound::SELECT);
+			} else if (dy > 60.0f && IsDown()) {
+				SetDown(false);
+				UI::PlayUISound(UI::UISound::SELECT);
+			}
+		}
+		return UI::AnchorLayout::Touch(t);
+	}
+private:
+	float target_ = 0.0f;
+	float shift_ = 0.0f;
+	double last_ = 0.0;
+	float startY_ = 0.0f;
+	bool tracking_ = false;
+};
 
 }  // namespace
 
@@ -703,9 +1015,9 @@ public:
 	ConsoleTab(std::string_view text, bool selected, UI::LayoutParams *layoutParams) : UI::Choice(text, layoutParams), selected_(selected) {}
 	void GetContentDimensionsBySpec(const UIContext &dc, UI::MeasureSpec horiz, UI::MeasureSpec vert, float &w, float &h) const override {
 		float tw, th;
-		dc.MeasureText(dc.GetTheme().uiFont, 1.0f, 1.0f, text_, &tw, &th);
-		w = tw + 24.0f;
-		h = 48.0f;
+		dc.MeasureText(dc.GetTheme().uiFont, 0.8f, 0.8f, text_, &tw, &th);
+		w = tw + 20.0f;
+		h = 44.0f;
 	}
 	void Draw(UIContext &dc) override {
 		const uint32_t accent = ThemeAccent(dc);
@@ -715,9 +1027,14 @@ public:
 		if (HasFocus())
 			dc.FillRect(UI::Drawable(colorAlpha(fg & 0xFFFFFF, 0.12f)), bounds_);
 		dc.SetFontStyle(dc.GetTheme().uiFont);
+		dc.SetFontScale(0.8f, 0.8f);
 		dc.DrawText(text_, bounds_.centerX(), bounds_.centerY(), fg, ALIGN_CENTER);
-		if (selected_)
-			dc.FillRect(UI::Drawable(accent), Bounds(bounds_.x + 12.0f, bounds_.y2() - 6.0f, bounds_.w - 24.0f, 3.0f));
+		dc.SetFontScale(1.0f, 1.0f);
+		if (selected_) {
+			const Bounds bar(bounds_.x + 10.0f, bounds_.y2() - 8.0f, bounds_.w - 20.0f, 3.0f);
+			TryledDraw::Glow(dc, bar, 1.5f, 8.0f, WithAlpha(accent, 0.7f));
+			TryledDraw::FillRoundRect(dc, bar, 1.5f, accent);
+		}
 	}
 private:
 	bool selected_;
@@ -801,50 +1118,50 @@ void MainScreen::CreateConsoleViews() {
 		s_tryledSelected = 0;
 	s_consoleOpenTime = time_now_d();
 
-	LinearLayout *rootLayout = new LinearLayout(ORIENT_VERTICAL, new LinearLayoutParams(FILL_PARENT, FILL_PARENT));
-	rootLayout->SetSpacing(0.0f);
-	root_ = rootLayout;
+	// Everything sits in a layout that slides up to show the bottom cards.
+	ConsoleShiftLayout *home = new ConsoleShiftLayout(new AnchorLayoutParams(FILL_PARENT, FILL_PARENT));
+	root_ = home;
+	consoleShift_ = home;
+	const Bounds screen = GetLayoutBounds(*screenManager()->getUIContext());
 
-	// Top bar: console tabs (L1/R1) on the left; folder, settings and clock on the right.
-	LinearLayout *topBar = rootLayout->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(18, 8, 24, 0))));
-	topBar->SetSpacing(4.0f);
-	// The console tabs scroll sideways when there are many consoles.
+	// Top bar: console tabs (L1/R1) on the left; search, folder, settings, profile and clock on the right.
+	LinearLayout *topBar = home->Add(new LinearLayout(ORIENT_HORIZONTAL, new AnchorLayoutParams(FILL_PARENT, 52.0f, 18.0f, 6.0f, 22.0f, NONE)));
+	topBar->SetSpacing(6.0f);
 	ScrollView *tabScroll = topBar->Add(new ScrollView(ORIENT_HORIZONTAL, new LinearLayoutParams(1.0f, Gravity::G_VCENTER)));
 	LinearLayout *tabRow = tabScroll->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT)));
-	tabRow->SetSpacing(4.0f);
+	tabRow->SetSpacing(2.0f);
 	if (consoleTabs_.size() > 1)
-		tabRow->Add(new ShoulderHint("L1", new LinearLayoutParams(34.0f, 48.0f, 0.0f, Gravity::G_VCENTER)));
-	View *currentTab = nullptr;
+		tabRow->Add(new ShoulderHint("L1", new LinearLayoutParams(32.0f, 44.0f, 0.0f, Gravity::G_VCENTER)));
 	for (int t = 0; t < (int)consoleTabs_.size(); t++) {
 		ConsoleTab *tabView = tabRow->Add(new ConsoleTab(consoleTabs_[t], t == s_tryledTab, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, 0.0f, Gravity::G_VCENTER)));
 		tabView->OnClick.Add([this, t](EventParams &) { ConsoleSetTab(t); });
-		if (t == s_tryledTab)
-			currentTab = tabView;
 	}
 	if (consoleTabs_.size() > 1)
-		tabRow->Add(new ShoulderHint("R1", new LinearLayoutParams(34.0f, 48.0f, 0.0f, Gravity::G_VCENTER)));
-	if (currentTab)
-		tabScroll->ScrollTo(std::max(0.0f, (float)s_tryledTab - 2.0f) * 110.0f);
-	if (g_tryledScanning) {
+		tabRow->Add(new ShoulderHint("R1", new LinearLayoutParams(32.0f, 44.0f, 0.0f, Gravity::G_VCENTER)));
+	tabScroll->ScrollTo(std::max(0.0f, (float)s_tryledTab - 2.0f) * 110.0f);
+	if (g_tryledScanning)
 		topBar->Add(new TextView("Buscando juegos…", ALIGN_RIGHT, true, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, 0.0f, Gravity::G_VCENTER)));
-	}
-	if (System_GetPropertyBool(SYSPROP_HAS_FOLDER_BROWSER)) {
-		topBar->Add(new Choice(ImageID("I_FOLDER_OPEN"), new LinearLayoutParams(ITEM_HEIGHT, ITEM_HEIGHT)))->OnClick.Add([this](EventParams &) { ConsoleChooseFolder(); });
-	}
-	topBar->Add(new Choice(ImageID("I_GEAR"), new LinearLayoutParams(ITEM_HEIGHT, ITEM_HEIGHT)))->OnClick.Handle(this, &MainScreen::OnGameSettings);
-	consoleClock_ = topBar->Add(new TextView(ClockString(), new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, 0.0f, Gravity::G_VCENTER)));
+	topBar->Add(new ConsoleIconButton(ImageID("I_SEARCH"), 38.0f, false))->OnClick.Add([this](EventParams &) {
+		s_tryledLibraryMode = true;
+		RecreateViews();
+	});
+	if (System_GetPropertyBool(SYSPROP_HAS_FOLDER_BROWSER))
+		topBar->Add(new ConsoleIconButton(ImageID("I_FOLDER_OPEN"), 38.0f, false))->OnClick.Add([this](EventParams &) { ConsoleChooseFolder(); });
+	topBar->Add(new ConsoleIconButton(ImageID("I_GEAR"), 38.0f, false))->OnClick.Handle(this, &MainScreen::OnGameSettings);
+	topBar->Add(new ConsoleAvatar());
+	consoleClock_ = topBar->Add(new TextView(ClockString(), ALIGN_VCENTER, true, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, 0.0f, Gravity::G_VCENTER, Margins(6, 0, 0, 0))));
 
 	// The row of games.
-	ScrollView *rowScroll = rootLayout->Add(new ScrollView(ORIENT_HORIZONTAL, new LinearLayoutParams(FILL_PARENT, 112.0f, Margins(0, 4, 0, 0))));
+	ScrollView *rowScroll = home->Add(new ScrollView(ORIENT_HORIZONTAL, new AnchorLayoutParams(FILL_PARENT, 104.0f, 0.0f, 54.0f, 0.0f, NONE)));
 	LinearLayout *row = rowScroll->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(WRAP_CONTENT, FILL_PARENT)));
-	row->SetSpacing(22.0f);
-	row->Add(new Spacer(14.0f));
+	row->SetSpacing(12.0f);
+	row->Add(new Spacer(16.0f));
 	View *firstTile = nullptr;
+	const bool showBadges = s_tryledTab == 0;
 	for (int i = 0; i < (int)consoleGames_.size(); i++) {
-		ConsoleGameTile *tile = row->Add(new ConsoleGameTile(consoleGames_[i], consoleKinds_[i], i,
+		ConsoleGameTile *tile = row->Add(new ConsoleGameTile(consoleGames_[i], consoleKinds_[i], showBadges, i,
 			[](int index) { return index == s_tryledSelected; },
-			[this](int index) { ConsoleSelect(index); },
-			new LinearLayoutParams(144.0f, 80.0f, 0.0f, Gravity::G_VCENTER)));
+			[this](int index) { ConsoleSelect(index); }));
 		tile->OnClick.Add([this, i](EventParams &) {
 			if (i == s_tryledSelected) {
 				ConsoleLaunchSelected();
@@ -855,30 +1172,34 @@ void MainScreen::CreateConsoleViews() {
 		if (i == s_tryledSelected)
 			firstTile = tile;
 	}
-	Choice *libraryTile = row->Add(new Choice(ImageID("I_GRID"), new LinearLayoutParams(80.0f, 80.0f, 0.0f, Gravity::G_VCENTER)));
-	libraryTile->OnClick.Add([this](EventParams &) {
+	row->Add(new ConsoleIconButton(ImageID("I_GRID"), kTile, true, 0.6f))->OnClick.Add([this](EventParams &) {
 		s_tryledLibraryMode = true;
 		RecreateViews();
 	});
-	row->Add(new Spacer(10.0f));
+	row->Add(new Spacer(16.0f));
+	if (s_tryledSelected > 4)
+		rowScroll->ScrollTo((s_tryledSelected - 4) * (kTile + 12.0f));
 
-	// Selected game: small name, big title, description.
-	LinearLayout *hero = rootLayout->Add(new LinearLayout(ORIENT_VERTICAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(28, 6, 28, 0))));
+	// Selected game, bottom left: big title, console badge + line, Play and "···".
+	LinearLayout *hero = home->Add(new LinearLayout(ORIENT_VERTICAL, new AnchorLayoutParams(screen.w * 0.58f, WRAP_CONTENT, 30.0f, NONE, NONE, 92.0f)));
 	hero->SetSpacing(2.0f);
-	consoleSmallName_ = hero->Add(new ConsoleAnimText(1.0f, true, 0.0f, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
-	consoleTitle_ = hero->Add(new ConsoleAnimText(1.9f, false, 0.05f, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
-	consoleSub_ = hero->Add(new ConsoleAnimText(1.0f, true, 0.12f, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
+	consoleSmallName_ = hero->Add(new TextView("", new LinearLayoutParams(0.0f, 0.0f)));
+	consoleSmallName_->SetVisibility(V_GONE);
+	consoleTitle_ = hero->Add(new ConsoleAnimText(1.75f, false, 0.05f, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
+	consoleSub_ = hero->Add(new ConsoleSubText(new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
 
 	LinearLayout *buttons = hero->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, Margins(0, 14, 0, 0))));
 	buttons->SetSpacing(12.0f);
-	ConsoleButton *playButton;
+	View *playButton;
 	if (consoleGames_.empty()) {
-		playButton = buttons->Add(new ConsoleButton("Elegir carpeta de juegos", ImageID("I_FOLDER_OPEN"), true, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT)));
-		playButton->OnClick.Add([this](EventParams &) { ConsoleChooseFolder(); });
+		ConsolePlayButton *pick = buttons->Add(new ConsolePlayButton("Elegir carpeta de juegos"));
+		pick->OnClick.Add([this](EventParams &) { ConsoleChooseFolder(); });
+		playButton = pick;
 	} else {
-		playButton = buttons->Add(new ConsoleButton("Jugar", ImageID("I_PLAY"), true, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT)));
-		playButton->OnClick.Add([this](EventParams &) { ConsoleLaunchSelected(); });
-		ConsoleButton *more = buttons->Add(new ConsoleButton("", ImageID("I_THREE_DOTS"), false, new LinearLayoutParams(64.0f, 56.0f)));
+		ConsolePlayButton *play = buttons->Add(new ConsolePlayButton("Jugar"));
+		play->OnClick.Add([this](EventParams &) { ConsoleLaunchSelected(); });
+		playButton = play;
+		ConsoleMoreButton *more = buttons->Add(new ConsoleMoreButton());
 		more->OnClick.Add([this](EventParams &) {
 			if (s_tryledSelected < (int)consoleGames_.size() && consoleKinds_[s_tryledSelected] == "PSP") {
 				screenManager()->push(new GameScreen(consoleGames_[s_tryledSelected], false));
@@ -886,20 +1207,16 @@ void MainScreen::CreateConsoleViews() {
 		});
 	}
 
-	rootLayout->Add(new Spacer(new LinearLayoutParams(1.0f)));
+	// Right: artwork card with pills.
+	home->Add(new ConsoleArtCard(new AnchorLayoutParams(150.0f, 188.0f, NONE, NONE, 30.0f, 92.0f)));
 
-	// Info cards at the bottom.
-	static const char *const cardLabels[3] = { "Tiempo jugado", "Guardados rápidos", "Ajustes del juego" };
-	LinearLayout *cards = rootLayout->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(24, 0, 24, 16))));
+	// Bottom cards, peeking from the bottom edge; the home slides up to show them.
+	LinearLayout *cards = home->Add(new LinearLayout(ORIENT_HORIZONTAL, new AnchorLayoutParams(FILL_PARENT, 150.0f, 24.0f, screen.h - 70.0f, 24.0f, NONE)));
 	cards->SetSpacing(12.0f);
-	for (int i = 0; i < 3; i++) {
-		ConsoleCard *card = cards->Add(new ConsoleCard(new LinearLayoutParams(1.0f)));
-		card->SetSpacing(0.0f);
-		TextView *label = card->Add(new TextView(cardLabels[i], ALIGN_LEFT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(12, 8, 12, 0))));
-		consoleCardValue_[i] = card->Add(new TextView("—", ALIGN_LEFT, false, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(12, 0, 12, 8))));
-	}
+	for (int i = 0; i < 3; i++)
+		cards->Add(new ConsoleInfoCard(i));
 
-	root_->SetDefaultFocusView(firstTile ? firstTile : (View *)playButton);
+	root_->SetDefaultFocusView(firstTile ? firstTile : playButton);
 	root_->SetTag("mainroot");
 
 	ConsoleRefreshInfo();
@@ -967,56 +1284,67 @@ void MainScreen::ConsoleRefreshInfo() {
 		consoleClock_->SetText(ClockString());
 	if (!consoleTitle_)
 		return;
+	ConsoleSubText *sub = static_cast<ConsoleSubText *>(consoleSub_);
 
+	s_details = ConsoleGameDetails();
 	if (consoleGames_.empty()) {
-		consoleSmallName_->SetText("Tryled");
+		sub->SetBadge("");
 		if (g_tryledScanning) {
 			consoleTitle_->SetText("Buscando juegos…");
-			consoleSub_->SetText("Revisando tu carpeta. Tus juegos aparecerán aquí, ordenados por consola.");
+			consoleSub_->SetText("Tus juegos aparecerán aquí, ordenados por consola.");
 		} else {
 			consoleTitle_->SetText("Tu colección está vacía");
-			consoleSub_->SetText(g_Config.sTryledGamesFolder.empty() ? "Elige la carpeta donde guardas tus juegos y Tryled los ordenará por consola." : "No encontré juegos en esa carpeta. Prueba con otra.");
+			consoleSub_->SetText(g_Config.sTryledGamesFolder.empty() ? "Elige la carpeta donde guardas tus juegos." : "No encontré juegos en esa carpeta.");
 		}
-		for (auto *card : consoleCardValue_)
-			card->SetText("—");
 		return;
 	}
 
 	const Path &path = consoleGames_[s_tryledSelected];
-	if (consoleKinds_[s_tryledSelected] != "PSP") {
-		consoleSmallName_->SetText(consoleKinds_[s_tryledSelected] + "  ·  " + path.GetFilename());
-		consoleTitle_->SetText(path.WithReplacedExtension("").GetFilename());
-		const RetroCoreInfo *core = RetroCoreForConsole(consoleKinds_[s_tryledSelected]);
-		consoleSub_->SetText(core ? std::string("Se juega con ") + core->name + ", integrado en Tryled." : "El emulador de " + consoleKinds_[s_tryledSelected] + " llegará a Tryled más adelante.");
-		for (auto *card : consoleCardValue_)
-			card->SetText("—");
+	const std::string &console = consoleKinds_[s_tryledSelected];
+	s_details.empty = false;
+	s_details.path = path;
+	s_details.console = console;
+	s_details.psp = console == "PSP";
+	sub->SetBadge(ConsoleShort(console));
+
+	if (!s_details.psp) {
+		const RetroCoreInfo *core = RetroCoreForConsole(console);
+		s_details.title = path.WithReplacedExtension("").GetFilename();
+		s_details.coreName = core ? core->name : "";
+		consoleTitle_->SetText(s_details.title);
+		consoleSub_->SetText(core ? std::string("Se juega con ") + core->name : "Emulador no disponible todavía");
 		return;
 	}
+
 	std::shared_ptr<GameInfo> ginfo = g_gameInfoCache->GetInfo(nullptr, path, kConsoleInfoFlags);
 	const bool ready = ginfo->Ready(GameInfoFlags::PARAM_SFO);
-	std::string title = ready ? ginfo->GetTitle() : path.GetFilename();
-
-	std::string kind = "PSP";
-	if (ginfo->fileType == IdentifiedFileType::PSP_ELF || ginfo->fileType == IdentifiedFileType::PSP_PBP_DIRECTORY)
-		kind = "Homebrew";
-	consoleSmallName_->SetText(kind + "  ·  " + (ginfo->id_version.empty() ? path.GetFilename() : ginfo->id_version));
-	consoleTitle_->SetText(title);
+	s_details.title = ready ? ginfo->GetTitle() : path.GetFilename();
+	consoleTitle_->SetText(s_details.title);
 
 	int seconds = 0;
-	const bool played = !ginfo->id.empty() && g_Config.TimeTracker().GetPlayedSeconds(ginfo->id, &seconds);
-	consoleSub_->SetText(played ? "Pulsa Jugar para continuar donde lo dejaste." : "Todavía no lo has jugado en Tryled.");
-	consoleCardValue_[0]->SetText(played ? FormatPlayTime(seconds) : "Sin jugar");
+	s_details.played = !ginfo->id.empty() && g_Config.TimeTracker().GetPlayedSeconds(ginfo->id, &seconds);
+	s_details.playedSeconds = seconds;
+	uint64_t last = 0;
+	if (!ginfo->id.empty() && g_Config.TimeTracker().GetLastPlayed(ginfo->id, &last) && last > 0) {
+		const int64_t ago = (int64_t)time(nullptr) - (int64_t)last;
+		const int64_t days = ago / 86400;
+		if (ago < 3600)
+			s_details.lastPlayed = "Jugado hace un momento";
+		else if (days == 0)
+			s_details.lastPlayed = "Jugado hoy";
+		else if (days == 1)
+			s_details.lastPlayed = "Jugado ayer";
+		else
+			s_details.lastPlayed = StringFromFormat("Jugado hace %d días", (int)days);
+	}
+	consoleSub_->SetText(s_details.played ? (s_details.lastPlayed.empty() ? std::string("Continúa donde lo dejaste") : s_details.lastPlayed) : "Todavía no lo has jugado");
 
-	int saves = 0;
 	if (ready) {
 		const std::string prefix = SaveState::GetGamePrefix(ginfo->GetParamSFO());
-		for (int slot = 0; slot < g_Config.iSaveStateSlotCount; slot++) {
-			if (SaveState::HasSaveInSlot(prefix, slot))
-				saves++;
-		}
+		for (int slot = 0; slot < g_Config.iSaveStateSlotCount; slot++)
+			s_details.slots.push_back(SaveState::HasSaveInSlot(prefix, slot));
 	}
-	consoleCardValue_[1]->SetText(saves == 0 ? std::string("Ninguno") : StringFromFormat("%d %s", saves, saves == 1 ? "ranura" : "ranuras"));
-	consoleCardValue_[2]->SetText(ginfo->hasConfig ? "Personalizados" : "Los globales");
+	s_details.customConfig = ginfo->hasConfig;
 }
 
 void MainScreen::CreateViews() {
@@ -1028,6 +1356,7 @@ void MainScreen::CreateViews() {
 	// Tryled: the console-style home is the default. The classic browser is the "Biblioteca".
 	consoleTitle_ = nullptr;
 	consoleClock_ = nullptr;
+	consoleShift_ = nullptr;
 	if (ConsoleMode()) {
 		CreateConsoleViews();
 		return;
@@ -1214,6 +1543,22 @@ void MainScreen::CreateViews() {
 }
 
 bool MainScreen::key(const KeyInput &key) {
+	if (consoleShift_ && (key.flags & KeyInputFlags::DOWN)) {
+		// Slide the home up/down to show the bottom cards: d-pad down from the Play row, d-pad up back, or the mouse wheel.
+		ConsoleShiftLayout *shift = static_cast<ConsoleShiftLayout *>(consoleShift_);
+		UI::View *focused = UI::GetFocusedView();
+		const bool onButtons = focused && (dynamic_cast<ConsolePlayButton *>(focused) || dynamic_cast<ConsoleMoreButton *>(focused));
+		if (((key.keyCode == NKCODE_DPAD_DOWN && onButtons) || key.keyCode == NKCODE_EXT_MOUSEWHEEL_DOWN) && !shift->IsDown()) {
+			shift->SetDown(true);
+			UI::PlayUISound(UI::UISound::SELECT);
+			return true;
+		}
+		if ((key.keyCode == NKCODE_DPAD_UP || key.keyCode == NKCODE_EXT_MOUSEWHEEL_UP || UI::IsEscapeKey(key)) && shift->IsDown()) {
+			shift->SetDown(false);
+			UI::PlayUISound(UI::UISound::SELECT);
+			return true;
+		}
+	}
 	if (consoleTitle_ && (key.flags & KeyInputFlags::DOWN)) {
 		if (key.keyCode == NKCODE_BUTTON_L1 || key.keyCode == NKCODE_BUTTON_L2) {
 			ConsoleSetTab(s_tryledTab - 1);
@@ -1359,6 +1704,8 @@ void MainScreen::DrawBackground(UIContext &dc) {
 			const float t = (float)i / (strips / 2 - 1);
 			dc.FillRect(UI::Drawable(colorAlpha(bg, 0.95f * t)), Bounds(b.x, b.y2() - fadeH + fadeH * i / (strips / 2), b.w, fadeH / (strips / 2) + 1.0f));
 		}
+		// Soft glow from the top edge, in the theme accent color (Tryled's own touch, not a wave).
+		TryledDraw::RadialEllipse(dc, b.centerX(), b.y - b.h * 0.12f, b.w * 0.7f, b.h * 0.42f, WithAlpha(ThemeAccent(dc), 0.26f), WithAlpha(ThemeAccent(dc), 0.0f));
 		DrawConsoleAmbient(dc, now);
 		dc.Flush();
 		return;
