@@ -25,6 +25,7 @@ static const RetroCoreInfo g_retroCores[] = {
 	{ "GB", "libmgba_libretro.so", "mGBA" },
 	{ "NES", "libfceumm_libretro.so", "FCEUmm" },
 	{ "SNES", "libsnes9x_libretro.so", "Snes9x" },
+	{ "PS1", "libpcsx_rearmed_libretro.so", "PCSX ReARMed" },
 	{ "Mega Drive", "libgenesis_plus_gx_libretro.so", "Genesis Plus GX" },
 	{ "Master System", "libgenesis_plus_gx_libretro.so", "Genesis Plus GX" },
 	{ "Game Gear", "libgenesis_plus_gx_libretro.so", "Genesis Plus GX" },

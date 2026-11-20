@@ -81,3 +81,6 @@
 [submodule "ext/tryled-cores/genesis_plus_gx"]
 	path = ext/tryled-cores/genesis_plus_gx
 	url = https://github.com/libretro/Genesis-Plus-GX.git
+[submodule "ext/tryled-cores/pcsx_rearmed"]
+	path = ext/tryled-cores/pcsx_rearmed
+	url = https://github.com/libretro/pcsx_rearmed.git

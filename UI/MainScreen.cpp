@@ -595,7 +595,7 @@ static std::string TryledConsoleOf(const Path &path) {
 	std::string ext = path.GetFileExtension();  // Lowercase, with the dot.
 	if (ext == ".iso" || ext == ".cso" || ext == ".chd" || ext == ".pbp" || ext == ".elf" || ext == ".prx")
 		return "PSP";
-	if (ext == ".cue" || ext == ".m3u" || ext == ".ecm")
+	if (ext == ".cue" || ext == ".m3u" || ext == ".ecm" || ext == ".img" || ext == ".mdf" || ext == ".toc" || ext == ".cbn" || ext == ".exe")
 		return "PS1";
 	if (ext == ".gba")
 		return "GBA";
@@ -790,15 +790,23 @@ void MainScreen::CreateConsoleViews() {
 	// Top bar: console tabs (L1/R1) on the left; folder, settings and clock on the right.
 	LinearLayout *topBar = rootLayout->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(18, 8, 24, 0))));
 	topBar->SetSpacing(4.0f);
+	// The console tabs scroll sideways when there are many consoles.
+	ScrollView *tabScroll = topBar->Add(new ScrollView(ORIENT_HORIZONTAL, new LinearLayoutParams(1.0f, Gravity::G_VCENTER)));
+	LinearLayout *tabRow = tabScroll->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT)));
+	tabRow->SetSpacing(4.0f);
 	if (consoleTabs_.size() > 1)
-		topBar->Add(new ShoulderHint("L1", new LinearLayoutParams(34.0f, 48.0f, 0.0f, Gravity::G_VCENTER)));
+		tabRow->Add(new ShoulderHint("L1", new LinearLayoutParams(34.0f, 48.0f, 0.0f, Gravity::G_VCENTER)));
+	View *currentTab = nullptr;
 	for (int t = 0; t < (int)consoleTabs_.size(); t++) {
-		ConsoleTab *tabView = topBar->Add(new ConsoleTab(consoleTabs_[t], t == s_tryledTab, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, 0.0f, Gravity::G_VCENTER)));
+		ConsoleTab *tabView = tabRow->Add(new ConsoleTab(consoleTabs_[t], t == s_tryledTab, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, 0.0f, Gravity::G_VCENTER)));
 		tabView->OnClick.Add([this, t](EventParams &) { ConsoleSetTab(t); });
+		if (t == s_tryledTab)
+			currentTab = tabView;
 	}
 	if (consoleTabs_.size() > 1)
-		topBar->Add(new ShoulderHint("R1", new LinearLayoutParams(34.0f, 48.0f, 0.0f, Gravity::G_VCENTER)));
-	topBar->Add(new Spacer(new LinearLayoutParams(1.0f)));
+		tabRow->Add(new ShoulderHint("R1", new LinearLayoutParams(34.0f, 48.0f, 0.0f, Gravity::G_VCENTER)));
+	if (currentTab)
+		tabScroll->ScrollTo(std::max(0.0f, (float)s_tryledTab - 2.0f) * 110.0f);
 	if (g_tryledScanning) {
 		topBar->Add(new TextView("Buscando juegos…", ALIGN_RIGHT, true, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, 0.0f, Gravity::G_VCENTER)));
 	}

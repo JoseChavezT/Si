@@ -2940,6 +2940,7 @@ if(ANDROID)
 	tryled_ndk_core(fceumm fceumm/jni libretro.so)
 	tryled_ndk_core(snes9x snes9x/libretro/jni libretro.so)
 	tryled_ndk_core(genesis_plus_gx genesis_plus_gx/libretro/jni libretro.so)
+	tryled_ndk_core(pcsx_rearmed pcsx_rearmed/jni libretro.so)
 endif()
 
 list(APPEND LinkCommon ${CoreLibName} ${CMAKE_THREAD_LIBS_INIT})
