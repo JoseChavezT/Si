@@ -46,6 +46,7 @@ public:
 	void MixAudio(int16_t *out, int frames, int outRate);
 
 	bool SaveState(int slot);
+	bool HasState(int slot) const;
 	bool LoadState(int slot);
 	void SaveSRAM();
 

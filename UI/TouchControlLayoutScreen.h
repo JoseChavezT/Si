@@ -44,4 +44,8 @@ protected:
 private:
 	UI::ChoiceStrip *mode_ = nullptr;
 	ControlLayoutView *layoutView_ = nullptr;
+	UI::TextView *hint_ = nullptr;
+	UI::View *topPanel_ = nullptr;
+	UI::View *bottomPanel_ = nullptr;
+	int editMode_ = 0;  // 0 = move, 1 = resize. Kept across RecreateViews().
 };

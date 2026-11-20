@@ -516,9 +516,12 @@ void Choice::Draw(UIContext &dc) {
 			if (image) {
 				_dbg_assert_(image);
 				// TODO: Use scale rotation and flip here as well (DrawImageRotated is always ALIGN_CENTER for now)
-				dc.Draw()->DrawImage(image_, bounds_.x + bounds_.h * 0.5f + paddingLeft, bounds_.centerY(), 1.0f, style.fgColor, ALIGN_CENTER);
+				// Tryled: shrink big icons in short rows, and keep a gap between the icon and the text.
+				const float iconScale = std::min(1.0f, bounds_.h * 0.6f / std::max(1.0f, (float)std::max(image->w, image->h)));
+				const float slot = std::max(bounds_.h, image->w * iconScale + 18.0f);
+				dc.Draw()->DrawImage(image_, bounds_.x + slot * 0.5f + paddingLeft, bounds_.centerY(), iconScale, style.fgColor, ALIGN_CENTER);
 
-				paddingLeft += bounds_.h;
+				paddingLeft += slot;
 			}
 		}
 

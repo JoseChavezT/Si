@@ -70,6 +70,7 @@
 #include "UI/BackgroundAudio.h"
 #include "UI/MiscViews.h"
 #include "UI/AdhocServerScreen.h"
+#include "UI/TryledDraw.h"
 
 // This is in an objective-C file.
 #if PPSSPP_PLATFORM(IOS)
@@ -629,6 +630,15 @@ void GamePauseScreen::CreateViews() {
 	buttonColumn->Add(rightColumnItems);
 
 	rightColumnItems->SetSpacing(0.0f);
+	if (!portrait) {
+		// Tryled: the game's name on top of the menu.
+		std::string title = g_paramSFO.GetValueString("TITLE");
+		if (title.empty())
+			title = gamePath_.GetFilename();
+		TextView *titleView = rightColumnItems->Add(new TextView(title, ALIGN_LEFT | FLAG_WRAP_TEXT, false, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(8, 4, 8, 0))));
+		titleView->SetBig(true);
+		rightColumnItems->Add(new TextView(pa->T("Pause", "En pausa"), ALIGN_LEFT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(8, 0, 8, 8))));
+	}
 	if (getUMDReplacePermit()) {
 		rightColumnItems->Add(new Choice(pa->T("Switch UMD"), ImageID("I_UMD")))->OnClick.Add([this](UI::EventParams &) {
 			screenManager()->push(new UmdReplaceScreen());
@@ -636,10 +646,10 @@ void GamePauseScreen::CreateViews() {
 	}
 
 	if (!portrait) {
-		Choice *continueChoice = rightColumnItems->Add(new Choice(pa->T("Continue"), ImageID("I_PLAY")));
+		Choice *continueChoice = rightColumnItems->Add(new TryledPrimaryChoice(pa->T("Continue"), ImageID("I_PLAY")));
 		root_->SetDefaultFocusView(continueChoice);
 		continueChoice->OnClick.Handle<UIScreen>(this, &UIScreen::OnBack);
-		rightColumnItems->Add(new Spacer(20.0));
+		rightColumnItems->Add(new Spacer(12.0));
 	}
 
 	if (g_paramSFO.IsValid() && g_Config.HasGameConfig(g_paramSFO.GetDiscID())) {

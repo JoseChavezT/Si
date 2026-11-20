@@ -169,3 +169,25 @@ void CoverUV(float texAspect, float boxAspect, float *u1, float *v1, float *u2, 
 }
 
 }  // namespace TryledDraw
+
+void TryledPrimaryChoice::Draw(UIContext &dc) {
+	const UI::Theme &t = dc.GetTheme();
+	uint32_t bg = t.itemFocusedStyle.background.color;
+	uint32_t fg = t.itemFocusedStyle.fgColor;
+	if (down_) {
+		bg = t.itemDownStyle.background.color;
+		fg = t.itemDownStyle.fgColor;
+	}
+	const Bounds b = ItemBackgroundBounds(dc);
+	TryledDraw::Glow(dc, b, b.h * 0.5f, 12.0f, (bg & 0xFFFFFF) | 0x80000000);
+	TryledDraw::FillRoundRect(dc, b, b.h * 0.5f, bg);
+	if (HasFocus())
+		TryledDraw::StrokeRoundRect(dc, b.Expand(3.0f), b.h * 0.5f + 3.0f, 2.0f, t.infoStyle.fgColor);
+	float x = b.x + 18.0f;
+	if (image_.isValid()) {
+		dc.Draw()->DrawImage(image_, x + 12.0f, b.centerY(), 0.8f, fg, ALIGN_CENTER);
+		x += 34.0f;
+	}
+	dc.SetFontStyle(t.uiFont);
+	dc.DrawTextRectSqueeze(text_, Bounds(x, b.y, b.x2() - x - 12.0f, b.h), fg, ALIGN_LEFT | ALIGN_VCENTER);
+}

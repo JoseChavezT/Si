@@ -34,6 +34,7 @@
 #include "UI/GamepadEmu.h"
 #include "UI/TouchControlLayoutScreen.h"
 #include "UI/TouchControlVisibilityScreen.h"
+#include "UI/TryledDraw.h"
 
 static float layoutAreaScale = 1.0f;
 
@@ -362,6 +363,7 @@ public:
 	}
 
 	int mode_ = 0;
+	bool Dragging() const { return pickedControl_ != nullptr; }
 
 private:
 	DragDropButton *getPickedControl(const int x, const int y);
@@ -617,7 +619,58 @@ void TouchControlLayoutScreen::update() {
 	if (!layoutView_->HasCreatedViews()) {
 		layoutView_->CreateViews();
 	}
+
+	// Tryled: hide the tools while a button is dragged, so it can pass under them.
+	const UI::Visibility vis = layoutView_->Dragging() ? UI::V_INVISIBLE : UI::V_VISIBLE;
+	for (UI::View *v : { topPanel_ }) {
+		if (v)
+			v->SetVisibility(vis);
+	}
 }
+
+namespace {
+
+// Tryled: a rounded translucent panel that holds the editor's tools.
+class TryledEditorPanel : public UI::LinearLayout {
+public:
+	TryledEditorPanel(UI::LayoutParams *lp) : UI::LinearLayout(ORIENT_VERTICAL, lp) {
+		SetSpacing(4.0f);
+		SetClickableBackground(true);
+	}
+	void Draw(UIContext &dc) override {
+		const UI::Theme &t = dc.GetTheme();
+		const float r = std::clamp((float)g_Config.iTryledCornerRadius, 0.0f, 24.0f);
+		TryledDraw::FillRoundRect(dc, bounds_, r, colorAlpha(t.backgroundColor & 0xFFFFFF, 0.92f));
+		TryledDraw::StrokeRoundRect(dc, bounds_, r, 1.0f, colorAlpha(t.infoStyle.fgColor & 0xFFFFFF, 0.15f));
+		UI::LinearLayout::Draw(dc);
+	}
+};
+
+// Tryled: the tool bars sit on top of the full screen controls, so they get touches first.
+class TryledEditorRoot : public UI::AnchorLayout {
+public:
+	TryledEditorRoot(UI::LayoutParams *lp) : UI::AnchorLayout(lp) {}
+	bool Touch(const TouchInput &input) override {
+		bool any = false;
+		for (auto it = views_.rbegin(); it != views_.rend(); ++it) {
+			UI::View *view = *it;
+			if (view->GetVisibility() != UI::V_VISIBLE)
+				continue;
+			if (view->Touch(input)) {
+				any = true;
+				if (input.flags & TouchInputFlags::DOWN)
+					break;
+			}
+		}
+		return any;
+	}
+};
+
+static std::string HintText(int mode) {
+	return mode == 0 ? "Arrastra un bot\u00f3n para moverlo." : "Arrastra hacia arriba: m\u00e1s grande. A los lados: m\u00e1s separado.";
+}
+
+}  // namespace
 
 void TouchControlLayoutScreen::CreateViews() {
 	using namespace UI;
@@ -627,52 +680,56 @@ void TouchControlLayoutScreen::CreateViews() {
 	const DeviceOrientation orientation = GetDeviceOrientation();
 	InitPadLayout(&g_Config.GetTouchControlsConfig(orientation), orientation, bounds.w, bounds.h);
 
-	// const bool portrait = GetDeviceOrientation() == DeviceOrientation::Portrait;
+	// Tryled: the controls use the whole screen, like in the game; the tools float on top.
+	layoutAreaScale = 1.0f;
 
-	const float leftColumnWidth = 200.0f;
-	layoutAreaScale = 1.0f - (leftColumnWidth + 10.0f) / std::max(bounds.w, 1.0f);
+	TryledEditorRoot *root = new TryledEditorRoot(new LayoutParams(FILL_PARENT, FILL_PARENT));
+	root_ = root;
 
-	auto co = GetI18NCategory(I18NCat::CONTROLS);
-	auto di = GetI18NCategory(I18NCat::DIALOG);
+	layoutView_ = root->Add(new ControlLayoutView(orientation, new AnchorLayoutParams(FILL_PARENT, FILL_PARENT)));
 
-	auto rootLayout = new LinearLayout(ORIENT_HORIZONTAL, new LayoutParams(FILL_PARENT, FILL_PARENT));
-	rootLayout->SetSpacing(0.0f);
-	root_ = rootLayout;
+	// The tools, in a compact panel in the middle of the screen, where there are no buttons.
+	const float panelW = 400.0f;
+	TryledEditorPanel *panel = root->Add(new TryledEditorPanel(new AnchorLayoutParams(panelW, WRAP_CONTENT, bounds.w * 0.5f, bounds.h * 0.5f, NONE, NONE, Centering::Both)));
+	auto row = [&]() {
+		LinearLayout *r = panel->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(8, 0))));
+		r->SetSpacing(4.0f);
+		return r;
+	};
+	const float rowH = 40.0f;
+	auto half = [&]() { return new LinearLayoutParams(0.0f, rowH, 1.0f); };
 
-	ScrollView *leftColumnScroll = root_->Add(new ScrollView(ORIENT_VERTICAL, new LinearLayoutParams(leftColumnWidth, FILL_PARENT)));
-	leftColumnScroll->SetAlignOpposite(true);
-	LinearLayout *leftColumn = leftColumnScroll->Add(new LinearLayout(ORIENT_VERTICAL, new LinearLayoutParams(Margins(12.0f, 0.0f))));
+	hint_ = panel->Add(new TextView(HintText(editMode_), ALIGN_HCENTER | FLAG_WRAP_TEXT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(10, 8, 10, 2))));
+	hint_->SetTextColor(0xB0FFFFFF);
 
-	mode_ = new ChoiceStrip(ORIENT_VERTICAL);
-	mode_->AddChoice(di->T("Move"), ImageID("I_MOVE"));
-	mode_->AddChoice(di->T("Resize"), ImageID("I_RESIZE"));
-	mode_->SetSelection(0, false);
+	mode_ = row()->Add(new ChoiceStrip(ORIENT_HORIZONTAL, new LinearLayoutParams(0.0f, rowH, 1.0f)));
+	mode_->AddChoice("Mover", ImageID("I_MOVE"));
+	mode_->AddChoice("Tama\u00f1o", ImageID("I_RESIZE"));
+	for (int i = 0; i < mode_->GetNumSubviews(); i++)
+		mode_->GetViewByIndex(i)->ReplaceLayoutParams(half());
+	layoutView_->mode_ = editMode_;
+	mode_->SetSelection(editMode_, false);
 	mode_->OnChoice.Add([this](UI::EventParams &e) {
-		int mode = mode_->GetSelection();
-		if (layoutView_) {
-			layoutView_->mode_ = mode;
-		}
+		editMode_ = mode_->GetSelection();
+		if (layoutView_)
+			layoutView_->mode_ = editMode_;
+		if (hint_)
+			hint_->SetText(HintText(editMode_));
 	});
 
-	CheckBox *snap = new CheckBox(&g_Config.bTouchSnapToGrid, di->T("Snap"));
-	PopupSliderChoice *gridSize = new PopupSliderChoice(&g_Config.iTouchSnapGridSize, 2, 256, 64, di->T("Grid"), screenManager(), "");
-	gridSize->SetEnabledPtr(&g_Config.bTouchSnapToGrid);
-
-	leftColumn->Add(mode_);
-	leftColumn->Add(new Choice(co->T("Customize")))->OnClick.Add([this](UI::EventParams &e) {
+	LinearLayout *r2 = row();
+	r2->Add(new Choice("Botones", half()))->OnClick.Add([this](UI::EventParams &e) {
 		screenManager()->push(new TouchControlVisibilityScreen(gamePath_));
 	});
-	leftColumn->Add(snap);
-	leftColumn->Add(gridSize);
-	leftColumn->Add(new Choice(di->T("Reset")))->OnClick.Handle(this, &TouchControlLayoutScreen::OnReset);
-	leftColumn->Add(new Spacer(12.0f));
-	leftColumn->Add(new Choice(di->T("Back"), ImageID("I_NAVIGATE_BACK")))->OnClick.Handle<UIScreen>(this, &UIScreen::OnBack);
-	leftColumn->Add(new Spacer(0.0f));
-	leftColumnScroll->SetShadows(false);
+	r2->Add(new Choice("Restablecer", half()))->OnClick.Handle(this, &TouchControlLayoutScreen::OnReset);
 
-	LinearLayout* rightColumn = root_->Add(new LinearLayout(ORIENT_VERTICAL, new LinearLayoutParams(1.0f, Margins(0.0f, 12.0f, 12.0f, 12.0f))));
-	rightColumn->Add(new TextView(co->T(DeviceOrientationToString(orientation))))->SetTextSize(TextSize::Small);
-	rightColumn->Add(new Spacer(new LinearLayoutParams(1.0)));
-	float previewHeight = bounds.h * layoutAreaScale;
-	layoutView_ = rightColumn->Add(new ControlLayoutView(GetDeviceOrientation(), new LinearLayoutParams(FILL_PARENT, previewHeight)));
+	LinearLayout *r3 = row();
+	r3->Add(new PopupSliderChoice(&g_Config.iTouchButtonOpacity, 0, 100, 65, "Opacidad", screenManager(), "%", half()));
+	PopupSliderChoice *gridSize = r3->Add(new PopupSliderChoice(&g_Config.iTouchSnapGridSize, 2, 256, 64, "Cuadr\u00edcula", screenManager(), "", half()));
+	gridSize->SetEnabledPtr(&g_Config.bTouchSnapToGrid);
+	row()->Add(new CheckBox(&g_Config.bTouchSnapToGrid, "Ajustar a la cuadr\u00edcula", "", new LinearLayoutParams(FILL_PARENT, rowH)));
+
+	panel->Add(new TryledPrimaryChoice("Guardar", ImageID::invalid(), new LinearLayoutParams(FILL_PARENT, rowH, Margins(10, 6, 10, 10))))->OnClick.Handle<UIScreen>(this, &UIScreen::OnBack);
+
+	topPanel_ = panel;
 }

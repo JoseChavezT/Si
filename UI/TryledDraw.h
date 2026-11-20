@@ -34,3 +34,14 @@ void RadialEllipse(UIContext &dc, float cx, float cy, float rx, float ry, uint32
 void CoverUV(float texAspect, float boxAspect, float *u1, float *v1, float *u2, float *v2);
 
 }  // namespace TryledDraw
+
+// Tryled: shared views for the Tryled look.
+#include "Common/UI/View.h"
+
+// The main action button ("Continuar", "Jugar"...): a pill in the theme accent color.
+class TryledPrimaryChoice : public UI::Choice {
+public:
+	TryledPrimaryChoice(std::string_view text, ImageID image, UI::LayoutParams *layoutParams = nullptr)
+		: UI::Choice(text, image, layoutParams) {}
+	void Draw(UIContext &dc) override;
+};

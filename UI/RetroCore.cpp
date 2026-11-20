@@ -325,6 +325,10 @@ bool RetroCore::SaveState(int slot) {
 	return File::WriteDataToFile(false, data.data(), data.size(), StatePath(slot));
 }
 
+bool RetroCore::HasState(int slot) const {
+	return File::Exists(StatePath(slot));
+}
+
 bool RetroCore::LoadState(int slot) {
 	if (!api_)
 		return false;
