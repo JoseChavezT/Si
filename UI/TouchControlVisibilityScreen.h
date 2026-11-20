@@ -40,6 +40,7 @@ public:
 	void CreateDialogViews(UI::ViewGroup *parent) override;
 	void CreateContextMenu(UI::ViewGroup *parent) override;
 	void onFinish(DialogResult result) override;
+	void dialogFinished(const Screen *dialog, DialogResult result) override;
 
 	const char *tag() const override { return "TouchControlVisibility"; }
 

@@ -372,6 +372,7 @@ public:
 
 	int mode_ = 0;
 	bool Dragging() const { return pickedControl_ != nullptr; }
+	bool HasControlAt(float x, float y) { return getPickedControl((int)x, (int)y) != nullptr; }
 
 	// Tryled: a tap (touch without moving) selects a button to edit on its own.
 	std::function<void(const std::string &key)> onTap;
@@ -478,8 +479,7 @@ void ControlLayoutView::Draw(UIContext& dc) {
 	float opacity = g_Config.iTouchButtonOpacity / 100.0f;
 	GamepadUpdateOpacity(std::max(0.5f, opacity));
 	using namespace UI;
-	dc.FillRect(Drawable(0x80000000), bounds_);
-	dc.Flush();
+	// Tryled: the dimmed background is drawn by the editor root, under the tool panel.
 	UI::AnchorLayout::Draw(dc);
 	// Tryled: frame around the selected button.
 	if (!selectedKey.empty()) {
@@ -726,23 +726,34 @@ public:
 	}
 };
 
-// Tryled: the tool bars sit on top of the full screen controls, so they get touches first.
+// Tryled: holds the controls and the tool panel. The controls are drawn on top and win the touch
+// when one is under the finger, so no button can get stuck under the panel; elsewhere the panel works.
 class TryledEditorRoot : public UI::AnchorLayout {
 public:
 	TryledEditorRoot(UI::LayoutParams *lp) : UI::AnchorLayout(lp) {}
+	ControlLayoutView *controls = nullptr;
+
 	bool Touch(const TouchInput &input) override {
+		if ((input.flags & TouchInputFlags::DOWN) && controls && controls->HasControlAt(input.x, input.y)) {
+			return controls->Touch(input);
+		}
 		bool any = false;
-		for (auto it = views_.rbegin(); it != views_.rend(); ++it) {
-			UI::View *view = *it;
-			if (view->GetVisibility() != UI::V_VISIBLE)
+		for (UI::View *view : views_) {
+			if (view == controls || view->GetVisibility() != UI::V_VISIBLE)
 				continue;
 			if (view->Touch(input)) {
 				any = true;
 				if (input.flags & TouchInputFlags::DOWN)
-					break;
+					return true;
 			}
 		}
+		if (controls)
+			any = controls->Touch(input) || any;
 		return any;
+	}
+	void Draw(UIContext &dc) override {
+		dc.FillRect(UI::Drawable(0x80000000), bounds_);
+		UI::AnchorLayout::Draw(dc);
 	}
 };
 
@@ -802,7 +813,8 @@ void TouchControlLayoutScreen::CreateViews() {
 	TryledEditorRoot *root = new TryledEditorRoot(new LayoutParams(FILL_PARENT, FILL_PARENT));
 	root_ = root;
 
-	layoutView_ = root->Add(new ControlLayoutView(orientation, new AnchorLayoutParams(FILL_PARENT, FILL_PARENT)));
+	layoutView_ = new ControlLayoutView(orientation, new AnchorLayoutParams(FILL_PARENT, FILL_PARENT));
+	root->controls = layoutView_;
 
 	// The tools, in a compact panel in the middle of the screen, where there are no buttons.
 	const float panelW = 400.0f;
@@ -823,6 +835,7 @@ void TouchControlLayoutScreen::CreateViews() {
 	if (!selectedKey_.empty()) {
 		CreateButtonPanel(panel, orientation);
 		topPanel_ = panel;
+		root->Add(layoutView_);
 		return;
 	}
 
@@ -859,4 +872,5 @@ void TouchControlLayoutScreen::CreateViews() {
 	panel->Add(new TryledPrimaryChoice("Guardar", ImageID::invalid(), new LinearLayoutParams(FILL_PARENT, rowH, Margins(10, 6, 10, 10))))->OnClick.Handle<UIScreen>(this, &UIScreen::OnBack);
 
 	topPanel_ = panel;
+	root->Add(layoutView_);
 }
