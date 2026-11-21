@@ -1583,6 +1583,8 @@ if(NOT LIBRETRO)
 		UI/AudioCommon.h
 		UI/AudioCommon.cpp
 		UI/RetroCore.cpp
+	UI/RetroVFS.h
+	UI/RetroVFS.cpp
 		UI/RetroCore.h
 		UI/RetroScreen.cpp
 		UI/RetroScreen.h

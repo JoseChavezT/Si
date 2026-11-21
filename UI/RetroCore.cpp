@@ -22,6 +22,7 @@
 #include "Core/System.h"
 #include "UI/libretro.h"
 #include "UI/RetroCore.h"
+#include "UI/RetroVFS.h"
 #include <memory>
 #include <map>
 #include "Core/ELF/ParamSFO.h"
@@ -220,6 +221,7 @@ bool RetroCore::Load(const RetroCoreInfo &info, const Path &game, std::string *e
 		std::lock_guard<std::mutex> guard(g_activeLock);
 		g_activeCore = this;
 	}
+	vfsUsed_ = false;
 	api_->retro_set_environment(&RetroCore::Environment);
 	api_->retro_init();
 	api_->retro_set_video_refresh(&RetroCore::VideoRefresh);
@@ -239,25 +241,17 @@ bool RetroCore::Load(const RetroCoreInfo &info, const Path &game, std::string *e
 		const std::string ext = game.GetFileExtension();
 		const bool multiFile = ext == ".cue" || ext == ".m3u" || ext == ".toc" || ext == ".ccd";
 		if (!multiFile) {
-			// One file: hand the core an open file descriptor as a normal path. No copy, so big
-			// .chd / .pbp images open right away.
-			fd_ = File::OpenFD(game, File::OPEN_READ);
-#if !defined(_WIN32)
-			if (fd_ >= 0) {
-				// Cores pick the image format from the file extension (.pbp, .chd...), so give the
-				// open file a link with the game's real name: <cache>/TRYLED/link/<name> -> /proc/self/fd/N.
-				Path linkDir = GetSysDirectory(DIRECTORY_APP_CACHE) / "TRYLED" / "link";
-				File::CreateFullPath(linkDir);
-				Path link = linkDir / game.GetFilename();
-				unlink(link.c_str());
-				if (symlink(StringFromFormat("/proc/self/fd/%d", fd_).c_str(), link.c_str()) == 0) {
-					pathStr = link.ToString();
-				} else {
-					close(fd_);
-					fd_ = -1;
+			// One file: if the core reads files through our VFS, serve the game straight from an
+			// open descriptor under a virtual path with the real name (cores pick the image
+			// format from the extension). No copy, and no storage permission needed.
+			if (vfsUsed_) {
+				fd_ = File::OpenFD(game, File::OPEN_READ);
+				if (fd_ >= 0) {
+					const std::string virtualPath = "/tryled-game/" + game.GetFilename();
+					RetroVFS::SetGameFile(virtualPath, fd_);
+					pathStr = virtualPath;
 				}
 			}
-#endif
 		}
 		if (fd_ < 0) {
 			// A .cue and its tracks (or a fallback): copy them to the app's cache folder.
@@ -357,6 +351,7 @@ void RetroCore::Unload() {
 	delete api_;
 	api_ = nullptr;
 	gameData_.clear();
+	RetroVFS::SetGameFile("", -1);
 #if !defined(_WIN32)
 	if (fd_ >= 0) {
 		close(fd_);
@@ -522,6 +517,17 @@ bool RetroCore::Environment(unsigned cmd, void *data) {
 	case RETRO_ENVIRONMENT_SET_MEMORY_MAPS:
 	case RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL:
 		return true;
+	case RETRO_ENVIRONMENT_GET_VFS_INTERFACE: {
+		retro_vfs_interface_info *vfs = (retro_vfs_interface_info *)data;
+		const retro_vfs_interface *iface = RetroVFS::Interface();
+		if (!iface || !vfs || vfs->required_interface_version > 3)
+			return false;
+		vfs->required_interface_version = 3;
+		vfs->iface = (retro_vfs_interface *)iface;
+		if (g_activeCore)
+			g_activeCore->vfsUsed_ = true;
+		return true;
+	}
 	case RETRO_ENVIRONMENT_GET_LANGUAGE:
 		*(unsigned *)data = RETRO_LANGUAGE_SPANISH;
 		return true;
