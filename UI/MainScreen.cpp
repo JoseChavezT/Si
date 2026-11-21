@@ -56,6 +56,7 @@
 #include "UI/Theme.h"
 #include "Core/Config.h"
 #include "Core/Loaders.h"
+#include "Core/FileSystems/BlockDevices.h"
 #include "Common/Data/Text/I18n.h"
 #include "Core/Util/DarwinFileSystemServices.h" // For the browser
 
@@ -977,6 +978,51 @@ private:
 
 static const char *const g_tryledConsoleOrder[] = { "PSP", "PS1", "GBA", "GB", "SNES", "NES", "Mega Drive", "Master System", "Game Gear", "PC Engine", "Atari 2600", "Atari 7800", "WonderSwan", "DOS" };
 
+// .chd, .pbp and .iso can be PSP or PS1 games: look inside. Cached, it reads a little of each file.
+static std::string TryledDiscConsole(const Path &path, const std::string &ext) {
+	static std::mutex lock;
+	static std::map<std::string, std::string> cache;
+	{
+		std::lock_guard<std::mutex> guard(lock);
+		auto it = cache.find(path.ToString());
+		if (it != cache.end())
+			return it->second;
+	}
+	std::string result = "PSP";
+	std::unique_ptr<FileLoader> loader(ConstructFileLoader(path));
+	if (loader && loader->Exists()) {
+		if (ext == ".pbp") {
+			// PS1 EBOOTs keep the disc image in DATA.PSAR, which starts with PSISOIMG or PSTITLEIMG.
+			uint8_t header[0x28]{};
+			if (loader->ReadAt(0, sizeof(header), header) == sizeof(header) && memcmp(header, "\0PBP", 4) == 0) {
+				uint32_t psar = header[0x24] | (header[0x25] << 8) | (header[0x26] << 16) | ((uint32_t)header[0x27] << 24);
+				char magic[16]{};
+				if (loader->ReadAt(psar, sizeof(magic), magic) == sizeof(magic) &&
+					(memcmp(magic, "PSISOIMG", 8) == 0 || memcmp(magic, "PSTITLEIMG", 10) == 0))
+					result = "PS1";
+			}
+		} else {
+			// Discs: the volume descriptor in sector 16 names the system.
+			std::string error;
+			std::unique_ptr<BlockDevice> dev(ConstructBlockDevice(loader.get(), &error));
+			if (dev) {
+				std::vector<u8> block(dev->GetBlockSize() * 2);
+				if (dev->ReadBlock(16, block.data())) {
+					const std::string text((const char *)block.data(), dev->GetBlockSize());
+					if (text.find("PLAYSTATION") != std::string::npos && text.find("PSP GAME") == std::string::npos)
+						result = "PS1";
+				}
+			}
+			// Raw CD images (2352-byte sectors) are never PSP games.
+			if (result == "PSP" && ext == ".iso" && loader->FileSize() % 2352 == 0 && loader->FileSize() % 2048 != 0)
+				result = "PS1";
+		}
+	}
+	std::lock_guard<std::mutex> guard(lock);
+	cache[path.ToString()] = result;
+	return result;
+}
+
 static std::string TryledConsoleOf(const Path &path) {
 	std::string ext = path.GetFileExtension();  // Lowercase, with the dot.
 	// DOS games: .dosz anywhere, and programs/archives inside a folder called "DOS".
@@ -989,7 +1035,9 @@ static std::string TryledConsoleOf(const Path &path) {
 		if (lower.find("/dos/") != std::string::npos || lower.find("%2fdos%2f") != std::string::npos)
 			return "DOS";
 	}
-	if (ext == ".iso" || ext == ".cso" || ext == ".chd" || ext == ".pbp" || ext == ".elf" || ext == ".prx")
+	if (ext == ".chd" || ext == ".pbp" || ext == ".iso")
+		return TryledDiscConsole(path, ext);
+	if (ext == ".cso" || ext == ".elf" || ext == ".prx")
 		return "PSP";
 	if (ext == ".cue" || ext == ".m3u" || ext == ".ecm" || ext == ".img" || ext == ".mdf" || ext == ".toc" || ext == ".cbn" || ext == ".exe")
 		return "PS1";

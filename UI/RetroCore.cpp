@@ -3,6 +3,9 @@
 #include "ppsspp_config.h"
 
 #include <cstring>
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
 #include <cstdarg>
 #include <algorithm>
 
@@ -186,19 +189,49 @@ bool RetroCore::Load(const RetroCoreInfo &info, const Path &game, std::string *e
 	std::string pathStr = game.ToString();
 	if (sysInfo.need_fullpath && game.Type() == PathType::CONTENT_URI) {
 		// This core opens the file itself, and can't open Android content:// URIs.
-		// Give it a copy in the app's cache folder.
-		Path cacheDir = GetSysDirectory(DIRECTORY_APP_CACHE) / "TRYLED";
-		File::CreateFullPath(cacheDir);
-		Path copy = cacheDir / game.GetFilename();
-		File::FileInfo src, dst;
-		if (!File::GetFileInfo(copy, &dst) || !File::GetFileInfo(game, &src) || src.size != dst.size) {
-			if (!File::Copy(game, copy)) {
+		const std::string ext = game.GetFileExtension();
+		const bool multiFile = ext == ".cue" || ext == ".m3u" || ext == ".toc" || ext == ".ccd";
+		if (!multiFile) {
+			// One file: hand the core an open file descriptor as a normal path. No copy, so big
+			// .chd / .pbp images open right away.
+			fd_ = File::OpenFD(game, File::OPEN_READ);
+			if (fd_ >= 0)
+				pathStr = StringFromFormat("/proc/self/fd/%d", fd_);
+		}
+		if (fd_ < 0) {
+			// A .cue and its tracks (or a fallback): copy them to the app's cache folder.
+			Path cacheDir = GetSysDirectory(DIRECTORY_APP_CACHE) / "TRYLED";
+			File::CreateFullPath(cacheDir);
+			auto copyOne = [&](const Path &from, const Path &to) {
+				File::FileInfo src, dst;
+				if (File::GetFileInfo(to, &dst) && File::GetFileInfo(from, &src) && src.size == dst.size)
+					return true;
+				return File::Copy(from, to);
+			};
+			Path copy = cacheDir / game.GetFilename();
+			if (!copyOne(game, copy)) {
 				*error = "No se pudo preparar el juego.";
 				Unload();
 				return false;
 			}
+			if (multiFile) {
+				// Copy the files the sheet names (FILE "Track 1.bin" BINARY), from the same folder.
+				std::string sheet;
+				File::ReadTextFileToString(copy, &sheet);
+				size_t pos = 0;
+				while ((pos = sheet.find('"', pos)) != std::string::npos) {
+					const size_t end = sheet.find('"', pos + 1);
+					if (end == std::string::npos)
+						break;
+					const std::string name = sheet.substr(pos + 1, end - pos - 1);
+					pos = end + 1;
+					if (name.empty() || name.find('/') != std::string::npos || name.find('\\') != std::string::npos)
+						continue;
+					copyOne(game.NavigateUp() / name, cacheDir / name);
+				}
+			}
+			pathStr = copy.ToString();
 		}
-		pathStr = copy.ToString();
 	}
 	gameInfo.path = pathStr.c_str();
 	if (!sysInfo.need_fullpath) {
@@ -256,6 +289,12 @@ void RetroCore::Unload() {
 	delete api_;
 	api_ = nullptr;
 	gameData_.clear();
+#if !defined(_WIN32)
+	if (fd_ >= 0) {
+		close(fd_);
+		fd_ = -1;
+	}
+#endif
 }
 
 void RetroCore::RunFrame() {

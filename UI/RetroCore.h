@@ -76,6 +76,7 @@ private:
 	RetroCoreInfo info_{};
 	Path game_;
 	std::string gameData_;
+	int fd_ = -1;  // Open game file handed to the core as /proc/self/fd/N (Android content URIs).
 
 	int pixelFormat_ = 0;  // RETRO_PIXEL_FORMAT_*
 	double fps_ = 60.0;
