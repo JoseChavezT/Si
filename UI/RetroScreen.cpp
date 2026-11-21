@@ -22,6 +22,7 @@
 #include "Common/StringUtils.h"
 
 RetroScreen::RetroScreen(const Path &game, const RetroCoreInfo &core) : game_(game), info_(core) {
+	GamepadResetRetroButtons();
 	// Per-game settings (touch layout, opacity...), if this game has its own.
 	g_Config.LoadGameConfig(TryledRetroGameId(game_));
 	loaded_ = core_.Load(info_, game_, &error_);
@@ -97,8 +98,10 @@ void RetroScreen::update() {
 void RetroScreen::UpdateJoypad() {
 	// PSP button -> RetroPad. Nintendo-style layout: A is the right face button, B the bottom one.
 	uint32_t pad = 0;
+	// Buttons from a gamepad or keyboard (control mapper) and from the touch controls.
+	const uint32_t held = pspButtons_ | GamepadGetRetroButtons();
 	auto map = [&](uint32_t pspBit, int retroId) {
-		if (pspButtons_ & pspBit)
+		if (held & pspBit)
 			pad |= 1u << retroId;
 	};
 	map(CTRL_CIRCLE, RETRO_DEVICE_ID_JOYPAD_A);

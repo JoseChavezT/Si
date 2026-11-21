@@ -16,6 +16,7 @@
 // https://github.com/hrydgard/ppsspp and http://www.ppsspp.org/.
 
 #include <algorithm>
+#include <atomic>
 
 #include "Common/Data/Color/RGBAUtil.h"
 #include "UI/RetroCore.h"
@@ -125,6 +126,26 @@ void TryledSetButtonOpacity(std::string_view key, int percent) {
 }
 
 static float g_retroAnalog[2][2]{};
+
+static std::atomic<uint32_t> g_retroTouchButtons{0};
+
+// Button input from the touch controls: to the PSP, or to the running game of another console.
+static void TouchUpdateButtons(uint32_t press, uint32_t release) {
+	if (RetroCore::AnyActive()) {
+		g_retroTouchButtons.fetch_and(~release);
+		g_retroTouchButtons.fetch_or(press);
+	} else {
+		__CtrlUpdateButtons(press, release);
+	}
+}
+
+uint32_t GamepadGetRetroButtons() {
+	return g_retroTouchButtons.load();
+}
+
+void GamepadResetRetroButtons() {
+	g_retroTouchButtons.store(0);
+}
 
 // Stick input from the touch controls: to the PSP, or to the running game of another console.
 static void TouchSetAnalogXY(int stick, float x, float y) {
@@ -314,9 +335,9 @@ bool PSPButton::Touch(const TouchInput &input) {
 		if (g_Config.bHapticFeedback) {
 			System_Vibrate(HAPTIC_VIRTUAL_KEY);
 		}
-		__CtrlUpdateButtons(pspButtonBit_, 0);
+		TouchUpdateButtons(pspButtonBit_, 0);
 	} else if (lastDown && !down) {
-		__CtrlUpdateButtons(0, pspButtonBit_);
+		TouchUpdateButtons(0, pspButtonBit_);
 	}
 	return retval;
 }
@@ -516,10 +537,10 @@ void PSPDpad::ProcessTouch(float x, float y, bool down, bool ignorePress) {
 	for (int i = 0; i < 4; i++) {
 		if (!ignorePress && (pressed & dir[i])) {
 			vibrate = true;
-			__CtrlUpdateButtons(dir[i], 0);
+			TouchUpdateButtons(dir[i], 0);
 		}
 		if (released & dir[i]) {
-			__CtrlUpdateButtons(0, dir[i]);
+			TouchUpdateButtons(0, dir[i]);
 		}
 	}
 	if (vibrate && g_Config.bHapticFeedback) {
@@ -905,7 +926,7 @@ void PSPCustomStick::ProcessTouch(float x, float y, bool down) {
 	}
 
 	if (release || press) {
-		__CtrlUpdateButtons(press, release);
+		TouchUpdateButtons(press, release);
 	}
 }
 

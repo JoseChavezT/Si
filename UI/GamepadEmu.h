@@ -427,4 +427,7 @@ float GamepadComponentOpacity(std::string_view key);
 // Tryled: stick position while a game of another console runs (the PSP core is off then).
 void GamepadSetRetroAnalog(int stick, float x, float y);
 void GamepadGetRetroAnalog(int stick, float *x, float *y);
+// Tryled: PSP buttons held on the touch controls while a game of another console runs.
+uint32_t GamepadGetRetroButtons();
+void GamepadResetRetroButtons();
 float GamepadGetOpacity();
