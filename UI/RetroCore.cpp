@@ -22,6 +22,10 @@
 #include "Core/System.h"
 #include "UI/libretro.h"
 #include "UI/RetroCore.h"
+#include <memory>
+#include <map>
+#include "Core/ELF/ParamSFO.h"
+#include "Core/Loaders.h"
 
 static const RetroCoreInfo g_retroCores[] = {
 	{ "GBA", "libmgba_libretro.so", "mGBA" },
@@ -74,6 +78,36 @@ static RetroCore *g_activeCore = nullptr;
 // Guards g_activeCore against the audio thread while a core is loaded or unloaded.
 static std::mutex g_activeLock;
 
+std::string TryledGameTitle(const Path &game) {
+	const std::string fallback = game.WithReplacedExtension("").GetFilename();
+	if (game.GetFileExtension() != ".pbp")
+		return fallback;
+	static std::mutex lock;
+	static std::map<std::string, std::string> cache;
+	std::lock_guard<std::mutex> guard(lock);
+	auto it = cache.find(game.ToString());
+	if (it != cache.end())
+		return it->second;
+	std::string title = fallback;
+	std::unique_ptr<FileLoader> loader(ConstructFileLoader(game));
+	uint8_t header[0x28]{};
+	if (loader && loader->ReadAt(0, sizeof(header), header) == sizeof(header) && memcmp(header, "\0PBP", 4) == 0) {
+		auto u32at = [&](int o) { return (uint32_t)header[o] | (header[o + 1] << 8) | (header[o + 2] << 16) | ((uint32_t)header[o + 3] << 24); };
+		const uint32_t sfoOff = u32at(0x08), sfoEnd = u32at(0x0C);
+		if (sfoEnd > sfoOff && sfoEnd - sfoOff < 64 * 1024) {
+			std::vector<uint8_t> sfo(sfoEnd - sfoOff);
+			ParamSFOData data;
+			if (loader->ReadAt(sfoOff, sfo.size(), sfo.data()) == sfo.size() && data.ReadSFO(sfo.data(), sfo.size())) {
+				std::string t = data.GetValueString("TITLE");
+				if (!t.empty())
+					title = t;
+			}
+		}
+	}
+	cache[game.ToString()] = title;
+	return title;
+}
+
 std::string TryledRetroGameId(const Path &game) {
 	std::string id = "TRYLED-";
 	for (char c : game.WithReplacedExtension("").GetFilename()) {
@@ -102,12 +136,25 @@ RetroCore::~RetroCore() {
 	Unload();
 }
 
+// Last lines the core logged, to explain a failed load to the user.
+static std::mutex g_coreLogLock;
+static std::string g_coreLastLog;
+
 static void RetroLog(enum retro_log_level level, const char *fmt, ...) {
 	char buf[1024];
 	va_list args;
 	va_start(args, fmt);
 	vsnprintf(buf, sizeof(buf), fmt, args);
 	va_end(args);
+	{
+		std::string line(buf);
+		while (!line.empty() && (line.back() == '\n' || line.back() == '\r'))
+			line.pop_back();
+		if (!line.empty()) {
+			std::lock_guard<std::mutex> guard(g_coreLogLock);
+			g_coreLastLog = line;
+		}
+	}
 	if (level >= RETRO_LOG_WARN)
 		WARN_LOG(Log::System, "[core] %s", buf);
 	else
@@ -195,8 +242,22 @@ bool RetroCore::Load(const RetroCoreInfo &info, const Path &game, std::string *e
 			// One file: hand the core an open file descriptor as a normal path. No copy, so big
 			// .chd / .pbp images open right away.
 			fd_ = File::OpenFD(game, File::OPEN_READ);
-			if (fd_ >= 0)
-				pathStr = StringFromFormat("/proc/self/fd/%d", fd_);
+#if !defined(_WIN32)
+			if (fd_ >= 0) {
+				// Cores pick the image format from the file extension (.pbp, .chd...), so give the
+				// open file a link with the game's real name: <cache>/TRYLED/link/<name> -> /proc/self/fd/N.
+				Path linkDir = GetSysDirectory(DIRECTORY_APP_CACHE) / "TRYLED" / "link";
+				File::CreateFullPath(linkDir);
+				Path link = linkDir / game.GetFilename();
+				unlink(link.c_str());
+				if (symlink(StringFromFormat("/proc/self/fd/%d", fd_).c_str(), link.c_str()) == 0) {
+					pathStr = link.ToString();
+				} else {
+					close(fd_);
+					fd_ = -1;
+				}
+			}
+#endif
 		}
 		if (fd_ < 0) {
 			// A .cue and its tracks (or a fallback): copy them to the app's cache folder.
@@ -243,8 +304,15 @@ bool RetroCore::Load(const RetroCoreInfo &info, const Path &game, std::string *e
 		gameInfo.data = gameData_.data();
 		gameInfo.size = gameData_.size();
 	}
+	{
+		std::lock_guard<std::mutex> guard(g_coreLogLock);
+		g_coreLastLog.clear();
+	}
 	if (!api_->retro_load_game(&gameInfo)) {
 		*error = std::string(info.name) + " no pudo abrir este juego.";
+		std::lock_guard<std::mutex> guard(g_coreLogLock);
+		if (!g_coreLastLog.empty())
+			*error += "\n" + g_coreLastLog.substr(0, 160);
 		Unload();
 		return false;
 	}

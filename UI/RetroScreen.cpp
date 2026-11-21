@@ -310,7 +310,7 @@ void RetroScreen::OpenPauseMenu() {
 	// With a gamepad or keyboard, every press should move through the menu right away.
 	UI::EnableFocusMovement(pauseFromButton_);
 	pauseFromButton_ = false;
-	auto *menu = new RetroPauseScreen(game_, game_.WithReplacedExtension("").GetFilename(), textures_[texIndex_], core_.AspectRatio(), &core_, [this](int action) {
+	auto *menu = new RetroPauseScreen(game_, TryledGameTitle(game_), textures_[texIndex_], core_.AspectRatio(), &core_, [this](int action) {
 		switch (action) {
 		case RetroPauseScreen::SAVE:
 			g_OSD.Show(OSDType::MESSAGE_SUCCESS, core_.SaveState(s_retroSlot) ? StringFromFormat("Estado guardado en la ranura %d", s_retroSlot + 1) : std::string("No se pudo guardar el estado"), 2.0f);

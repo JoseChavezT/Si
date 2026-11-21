@@ -17,6 +17,9 @@ struct RetroCoreInfo {
 	const char *name;      // Human readable emulator name.
 };
 
+// Name to show for a game of another console: the title inside a PS1 EBOOT (.pbp), else the file name.
+std::string TryledGameTitle(const Path &game);
+
 // Id for the per-game settings of a game of another console (PSP games use their disc id).
 std::string TryledRetroGameId(const Path &game);
 

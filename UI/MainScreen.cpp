@@ -601,7 +601,7 @@ void DrawGameArt(UIContext &dc, const Path &path, const std::string &console, co
 			title = ginfo->GetTitle();
 	}
 	if (title.empty())
-		title = path.WithReplacedExtension("").GetFilename();
+		title = TryledGameTitle(path);
 	if (tex) {
 		float u1, v1, u2, v2;
 		TryledDraw::CoverUV((float)tex->Width() / (float)tex->Height(), b.w / b.h, &u1, &v1, &u2, &v2);
@@ -1438,7 +1438,7 @@ void MainScreen::ConsoleRefreshInfo() {
 
 	if (!s_details.psp) {
 		const RetroCoreInfo *core = RetroCoreForConsole(console);
-		s_details.title = path.WithReplacedExtension("").GetFilename();
+		s_details.title = TryledGameTitle(path);
 		s_details.coreName = core ? core->name : "";
 		consoleTitle_->SetText(s_details.title);
 		consoleSub_->SetText(core ? std::string("Se juega con ") + core->name : "Emulador no disponible todavía");
